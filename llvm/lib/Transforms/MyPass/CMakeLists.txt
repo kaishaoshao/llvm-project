@@ -1,8 +1,16 @@
-# CMakeLists.txt
+add_llvm_component_library(LLVMMyPass 
+  MyPass.cpp    
 
-add_llvm_library(MyPass MODULE BUILDTREE_ONLY
-    MyPass.cpp
+  ADDITIONAL_HEADER_DIRS
+  ${LLVM_MAIN_INCLUDE_DIR}/llvm/Transforms
+  ${LLVM_MAIN_INCLUDE_DIR}/llvm/Transforms/MyPass
 
-    PLUGIN_TOOL
-    opt
+  DEPENDS
+  intrinsics_gen
+
+  LINK_COMPONENTS
+  Analysis
+  Core
+  Support
+  TargetParser
 )

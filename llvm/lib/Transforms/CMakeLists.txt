@@ -2,6 +2,9 @@ add_subdirectory(Utils)
 add_subdirectory(Instrumentation)
 add_subdirectory(AggressiveInstCombine)
 add_subdirectory(InstCombine)
+
+add_subdirectory(MyPass)
+
 add_subdirectory(Scalar)
 add_subdirectory(IPO)
 add_subdirectory(Vectorize)
@@ -11,4 +14,4 @@ add_subdirectory(CFGuard)
 add_subdirectory(HipStdPar)
 
 # add_subdirectory(OurPass)
-# add_subdirectory(MyPass)
+
