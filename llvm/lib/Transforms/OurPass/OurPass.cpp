@@ -1,21 +1,30 @@
-#include "llvm/CodeGen/Register.h"
-#include "llvm/Pass.h"
-#include "llvm/IR/Function.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/raw_ostream.h"
 
-
 using namespace llvm;
+
 namespace {
-  struct OurPass : public FunctionPass {
-    static char ID;
-    OurPass() : FunctionPass(ID) {}
-    
-    bool runOnFunction(Function &F) override {
-      errs() << "OurPass: ";
-      errs().write_escaped(F.getName()) << '\n';
-      return false;
+  struct OurPass : public PassInfoMixin<OurPass> {
+    PreservedAnalyses run(Function &F, FunctionAnalysisManager &) {
+      errs() << "OurPass: Processing function '" << F.getName() << "'\n";
+      return PreservedAnalyses::all();
     }
-
   };
+}
 
-} // end anonymous namespace
+extern "C" PassPluginLibraryInfo LLVM_ATTRIBUTE_WEAK llvmGetPassPluginInfo() {
+  return {
+    LLVM_PLUGIN_API_VERSION, "OurPass", "v0.1", [](PassBuilder &PB) {
+      PB.registerPipelineParsingCallback(
+        [](StringRef Name, FunctionPassManager &FPM, ArrayRef<PassBuilder::PipelineElement>) {
+          if (Name == "ourpass") {
+            FPM.addPass(OurPass());
+            return true;
+          }
+          return false;
+        }
+      );
+    }
+  };
+}
