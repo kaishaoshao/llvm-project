@@ -21,8 +21,9 @@ int main(){
 cat /tmp/hello_world.c 
 
 echo "*************Create the hello_world.bc***********"
-$clang -emit-llvm -c /tmp/hello_world.c -o /tmp/hello_world.bc
+$clang -target x86_64-unknown-linux-gnu -emit-llvm -c /tmp/hello_world.c -o /tmp/hello_world.bc
 
 echo "*************Run ourpass on hello_world.bc***********"
 # --mtriple=x86_64-unknown-linux-gnu 
-$opt --mtriple=x86_64-unknown-linux-gnu  -load-pass-plugin $ourpass -passes=ourpass -time-passes < hello_world.bc > /tmp/null
+$opt --mtriple=riscv64-unknown-elf  -load-pass-plugin $ourpass -passes=ourpass -time-passes < hello_world.bc > /tmp/null
+
