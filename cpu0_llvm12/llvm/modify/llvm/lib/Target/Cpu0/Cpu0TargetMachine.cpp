@@ -26,11 +26,13 @@
 #include "Cpu0TargetObjectFile.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Target/TargetOptions.h"
+#include <string>
 
 using namespace llvm;
 
@@ -107,8 +109,52 @@ CpuoTargetMachine::Cpu0TargetMachine(const Target &T, const Triple &TT,
 
 Cpu0TargetMachine::~Cpu0TargetMachine() {}
 
-viod Cpu0TargetMachine::anchor() {}
+void Cpu0TargetMachine::anchor() {}
 
+Cpu0elTargetMachine::Cpu0elTargetMachine(const Target &T,const Triple &TT, 
+                                         StringRef CPU, StringRef FS,
+                                         const TargetOptions &Options,
+                                         Optional<Reloc::Model> RM,
+                                         Optional<CodeModel::Model> CM,
+                                         CodeGenOpt::Level OL, bool JIT)
+    : Cpu0TargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, JIT, true) {}
+
+const Cpu0Subtarget* Cpu0TargetMachine::getSubtargetImpl(const Function &F) const {
+    std::string CPU = TargetCPU;
+    std::string FS = TargetFS;
+
+    // This needs to be done before we create a new subtarget since any
+    // creation will depend on the TM and the code generation flags on the
+    // function that reside in TargetOptions.
+    auto &I = SubtargetMap[CPU + FS];
+    if(!I) {
+        resetTargetOptions(F);
+        I = std::make_unique<Cpu0Subtarget>(TargetTriple, CPU, FS, isLittle, *this);
+    }
+
+    return I.get();
+}
+
+namespace {
+/// Cpu0 Code Generator Pass Configuration Options.
+class Cpu0PassConfig : public TargetPassConfig {
+public: 
+    Cpu0PassConfig(Cpu0TargetMachine &TM, PassManagerBase &PM)
+        : TargetPassConfig(TM, PM) {}
+    Cpu0TargetMachine &getCpu0TargetMachine() const {
+        return getTM<Cpu0TargetMachine>();
+    }
+    
+    const Cpu0Subtarget &getCpu0Subtarget() const {
+        return *getCpu0TargetMachine().getSubtargetImpl();
+    }
+
+};
+}
+
+TargetPassConfig *Cpu0TargetMachine::createPassConfig(PassManagerBase &PM) {
+    return new Cpu0PassConfig(*this, PM);
+}
 
 
               
