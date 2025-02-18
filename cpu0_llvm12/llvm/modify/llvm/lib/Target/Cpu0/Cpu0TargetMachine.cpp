@@ -89,6 +89,19 @@ static Reloc::Model getEffectiveCodeModel(bool JIT,
 // offset from the stack/frame pointer, using StackGrowsUp enables
 // an easier handling.
 // Using CodeModel::Large enables different CALL behavior.
+// 构造函数用于初始化Cpu0TargetMachine类的实例
+// 该类负责管理CPU0目标机器的特定属性和行为
+// 参数:
+// - T: 目标机器的描述
+// - TT: 目标三元组，提供有关目标平台的信息
+// - CPU: 目标CPU的名称
+// - FS: 特定于目标的功能字符串
+// - Options: 目标选项，包含一系列编译选项
+// - RM: 可选的重定位模型
+// - CM: 可选的代码模型
+// - OL: 代码生成的优化级别
+// - JIT: 是否用于JIT编译的标志
+// - isLittle: 是否为小端字节序的标志，默认大端
 CpuoTargetMachine::Cpu0TargetMachine(const Target &T, const Triple &TT,
                                      StringRef CPU, StringRef FS,
                                      const TargetOptions &Options,
@@ -96,14 +109,14 @@ CpuoTargetMachine::Cpu0TargetMachine(const Target &T, const Triple &TT,
                                      Optional<CodeModel::Model> CM,
                                      CodeGenOpt::Level OL, bool JIT, 
                                      bool isLittle) 
-// 默认大端
     : LLVMTargetMachine(T, computeDataLayout(TT, CPU, Options, isLittle), TT,
                         CPU, FS, Options, getEffectiveCodeModel(JIT, RM),
                         getEffectiveCodeModel(CM, CodeModel::Small), OL),
         isLittle(isLittle), TLOF(make_unique<Cpu0TargetObjectFile>()),
         ABI(Cpu0ABI::computeTargetABI()), 
         DefaultSubtarget(TT, CPU, FS, isLittle, *this){
-    // initAsmInfo will display featurea by llc -march=cpu0 -mcpu=help on 3.7 but not on 3.6
+    // 初始化汇编信息，这将在使用llc命令行工具时显示CPU0目标的特性
+    // 注意：此行为在3.7版本中可见，但在3.6版本中不可见
     initsAsmInfo();
 }
 
