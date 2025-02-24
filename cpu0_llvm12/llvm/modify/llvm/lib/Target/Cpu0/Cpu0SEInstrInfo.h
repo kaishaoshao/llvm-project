@@ -23,13 +23,15 @@
 
 namespace llvm{
 
-class Cpu0
+class Cpu0SEInstrInfo : public Cpu0InstrInfo {
+    const Cpu0SERegisterInfo RI;
 
+public:
+    explicit Cpu0SEInstrInfo(const Cpu0Subtarget &STI);
 
+    const Cpu0SEInstrInfo &getRegisterInfo() const override;
+};
 
-}
-
-
-
+} 
 
 #endif // LLVM_LIB_TARGET_CPU0_CPU0SEINSTRINFO_H
