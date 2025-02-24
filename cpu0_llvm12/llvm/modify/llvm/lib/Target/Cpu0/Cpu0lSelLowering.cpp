@@ -86,6 +86,31 @@ const Cpu0TargetLowering *Cpu0TargetLowering::create(const Cpu0TargetMachine &TM
 /// LowerFormalArguments - transform physical registers into virtual registers
 /// and generate load operations for arguments places on the stack.
 
-SDValue Cpu0TargetLowering::lowerReturn(SDValue Chain,Calling)
+SDValue
+Cpu0TargetLowering::LowerFormalArguments(SDValue Chain,
+                                         CallingConv::ID CallConv,
+                                         bool IsVarArg,
+                                         const SmallVectorImpl<ISD::InputArg> &Ins,
+                                         const SDLoc &DL, SelectionDAG &DAG,
+                                         SmallVectorImpl<SDValue> &InVals)
+                                          const {
+
+  return Chain;
+}
+// @LowerFormalArguments }
+
+//===----------------------------------------------------------------------===//
+//@              Return Value Calling Convention Implementation
+//===----------------------------------------------------------------------===//
+
+SDValue
+Cpu0TargetLowering::LowerReturn(SDValue Chain,
+                                CallingConv::ID CallConv, bool IsVarArg,
+                                const SmallVectorImpl<ISD::OutputArg> &Outs,
+                                const SmallVectorImpl<SDValue> &OutVals,
+                                const SDLoc &DL, SelectionDAG &DAG) const {
+  return DAG.getNode(Cpu0ISD::Ret, DL, MVT::Other,
+                     Chain, DAG.getRegister(Cpu0::LR, MVT::i32));
+}
 
 
