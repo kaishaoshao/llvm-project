@@ -20,18 +20,20 @@
 #include "Cpu0SERegisterInfo.h"
 #include "Cpu0MachineFunction.h"
 
-
-namespace llvm{
+namespace llvm {
 
 class Cpu0SEInstrInfo : public Cpu0InstrInfo {
-    const Cpu0SERegisterInfo RI;
+  const Cpu0SERegisterInfo RI;
 
 public:
-    explicit Cpu0SEInstrInfo(const Cpu0Subtarget &STI);
+  explicit Cpu0SEInstrInfo(const Cpu0Subtarget &STI);
 
-    const Cpu0RegisterInfo &getRegisterInfo() const override;
+  const Cpu0RegisterInfo &getRegisterInfo() const override;
+
+  
 };
 
-} 
+}
 
-#endif // LLVM_LIB_TARGET_CPU0_CPU0SEINSTRINFO_H
+#endif
+

@@ -1,4 +1,4 @@
-//===-- Cpu0TargetMachine.cpp - Define TargetMachine for Cpu0 -------------===//
+//===-- Cpu0TargetMachine.h - Define TargetMachine for Cpu0 -----*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,97 +7,80 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Implements the info about Cpu0 target spec.
+// This file declares the Cpu0 specific subclass of TargetMachine.
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_LIB_TARGET_CPU0_CPU0TARGETMACHINE_H
 #define LLVM_LIB_TARGET_CPU0_CPU0TARGETMACHINE_H
-// #include "Cpu0TargetMachine.h"
-// #include "Cpu0.h"
 
-// #include "llvm/IR/Attributes.h"
-// #include "llvm/IR/Function.h"
-// #include "llvm/Support/CodeGen.h"
-// #include "llvm/CodeGen/Passes.h"
-// #include "llvm/CodeGen/TargetPassConfig.h"
-// #include "llvm/Support/TargetRegistry.h"
-// #include "llvm/Target/TargetOptions.h"
+#include "Cpu0Config.h"
 
-
-#include "Cpu0Config.h" // 包含Cpu0配置文件
-
-#include "MCTargetDesc/Cpu0ABIInfo.h" // 包含Cpu0 ABI信息
-#include "Cpu0Subtarget.h" // 包含Cpu0子目标信息
-#include "llvm/CodeGen/Passes.h" // 包含代码生成相关的头文件
-#include "llvm/CodeGen/SelectionDAGISel.h" // 包含选择DAG指令选择器的头文件
-#include "llvm/CodeGen/TargetFrameLowering.h" // 包含目标框架降低的头文件
-#include "llvm/Support/CodeGen.h" // 包含代码生成支持的头文件
-#include "llvm/Target/TargetMachine.h" // 包含目标机器的头文件
+#include "MCTargetDesc/Cpu0ABIInfo.h"
+#include "Cpu0Subtarget.h"
+#include "llvm/CodeGen/Passes.h"
+#include "llvm/CodeGen/SelectionDAGISel.h"
+#include "llvm/CodeGen/TargetFrameLowering.h"
+#include "llvm/Support/CodeGen.h"
+#include "llvm/Target/TargetMachine.h"
 
 namespace llvm {
-class formatted_raw_ostream; // 前向声明formatted_raw_ostream类
-class Cpu0RegisterInfo; // 前向声明Cpu0RegisterInfo类
+class formatted_raw_ostream;
+class Cpu0RegisterInfo;
 
-// 定义Cpu0TargetMachine类，继承自LLVMTargetMachine
-class Cpu0TargetMchine : public LLVMTargetMachine {
-    bool isLittle; // 是否为小端模式
+class Cpu0TargetMachine : public LLVMTargetMachine {
+  bool isLittle;
+  std::unique_ptr<TargetLoweringObjectFile> TLOF;
+  // Selected ABI
+  Cpu0ABIInfo ABI;
+  Cpu0Subtarget DefaultSubtarget;
 
-    std::unique_ptr<TargetLoweringObjectFile> TLOF; // 独占指针，指向目标降低对象文件
-
-    // 选择的ABI
-    Cpu0ABI::ABI TargetABI;
-    Cpu0Subtarget DefaultSubtarget; // 默认子目标
-
-    mutable StringMap<std::unique_ptr<Cpu0Subtarget>> SubtargetMap; // 可变的子目标映射
-
+  mutable StringMap<std::unique_ptr<Cpu0Subtarget>> SubtargetMap;
 public:
-    // 构造函数
-    Cpu0TargetMachine(const Target &T, const Triple &TT, StringRef CPU,
+  Cpu0TargetMachine(const Target &T, const Triple &TT, StringRef CPU,
+                    StringRef FS, const TargetOptions &Options,
+                    Optional<Reloc::Model> RM, Optional<CodeModel::Model> CM,
+                    CodeGenOpt::Level OL, bool JIT, bool isLittle);
+  ~Cpu0TargetMachine() override;
+
+  const Cpu0Subtarget *getSubtargetImpl() const {
+    return &DefaultSubtarget;
+  }
+
+  const Cpu0Subtarget *getSubtargetImpl(const Function &F) const override;
+
+  // Pass Pipeline Configuration
+  TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
+
+  TargetLoweringObjectFile *getObjFileLowering() const override {
+    return TLOF.get();
+  }
+  bool isLittleEndian() const { return isLittle; }
+  const Cpu0ABIInfo &getABI() const { return ABI; }
+};
+
+/// Cpu0ebTargetMachine - Cpu032 big endian target machine.
+///
+class Cpu0ebTargetMachine : public Cpu0TargetMachine {
+  virtual void anchor();
+public:
+  Cpu0ebTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
                       StringRef FS, const TargetOptions &Options,
-                      Optional<Reloc::Model> RM, CodeModel::Model CM,
-                      CodeGenOpt::Level OL, bool JIT, bool isLittle);
-    // 析构函数
-    ~Cpu0TargetMachine() override;
-
-    // 获取子目标实现
-    const Cpu0Subtarget *getSubtargetImpl() const { 
-        return &DefaultSubtarget; 
-    }
-
-    // 根据函数获取子目标实现
-    const Cpu0Subtarget *getSubtargetImpl(const Function &F) const override;
-
-    // 传递管道配置
-    TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
-
-    // 获取对象文件降低
-    TargetLoweringObjectFile *getObjFileLowering() const override {
-        return TLOF.get();
-    }
-
-    // 判断是否为小端模式
-    bool isLittleEndian() const { return isLittle; }
-
-    // 获取ABI信息
-    const Cpu0ABIInfo *getABI() const { return ABI; }
-
+                      Optional<Reloc::Model> RM, Optional<CodeModel::Model> CM,
+                      CodeGenOpt::Level OL, bool JIT);
 };
 
-// Cpu0TagetMachine - Cpu0小端目标机器
+/// Cpu0elTargetMachine - Cpu032 little endian target machine.
+///
 class Cpu0elTargetMachine : public Cpu0TargetMachine {
-    virtual void anchor(); // 锚定函数
+  virtual void anchor();
 public:
-    // 构造函数
-    Cpu0elTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
-                        StringRef FS, const TargetOptions &Options,
-                        Optional<Reloc::Model> RM, CodeModel::Model CM,
-                        CodeGenOpt::Level OL, bool JIT);
-
+  Cpu0elTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
+                      StringRef FS, const TargetOptions &Options,
+                      Optional<Reloc::Model> RM, Optional<CodeModel::Model> CM,
+                      CodeGenOpt::Level OL, bool JIT);
 };
-
-}  // 结束llvm命名空间
-
-#endif // 结束预处理指令
+} // End llvm namespace
 
 #endif
+

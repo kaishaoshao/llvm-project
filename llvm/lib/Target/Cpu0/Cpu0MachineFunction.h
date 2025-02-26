@@ -15,7 +15,6 @@
 #define LLVM_LIB_TARGET_CPU0_CPU0MACHINEFUNCTION_H
 
 #include "Cpu0Config.h"
-#include "Cpu0lSelLowering.h"
 
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -24,35 +23,37 @@
 #include "llvm/Target/TargetMachine.h"
 #include <map>
 
-namespace llvm{
+namespace llvm {
+
 //@1 {
 /// Cpu0FunctionInfo - This class is derived from MachineFunction private
 /// Cpu0 target-specific information for each MachineFunction.
-class Cpu0FunctionInfo : public MachineFunctionInfo{
+class Cpu0FunctionInfo : public MachineFunctionInfo {
 public:
-    Cpu0FunctionInfo(MachineFunction& MF) : MF(MF),
-                                    VarArgsFrameIndex(0),
-                                    MaxCallFrameSize(0)
-                                    {}
-    ~Cpu0FunctionInfo();
+  Cpu0FunctionInfo(MachineFunction& MF)
+  : MF(MF), 
+    VarArgsFrameIndex(0), 
+    MaxCallFrameSize(0)
+    {}
 
-    int getVarArgsFrameIndex() const {return VarArgsFrameIndex; }
+  ~Cpu0FunctionInfo();
 
-    void setVarArgsFrameIndex(int Index) { VarArgsFrameIndex = Index; }
-
+  int getVarArgsFrameIndex() const { return VarArgsFrameIndex; }
+  void setVarArgsFrameIndex(int Index) { VarArgsFrameIndex = Index; }
 
 private:
-    virtual void anchor();
+  virtual void anchor();
 
-    MachineFunction& MF;
+  MachineFunction& MF;
 
     /// VarArgsFrameIndex - FrameIndex for start of varargs area.
-    int VarArgsFrameIndex;
+  int VarArgsFrameIndex;
 
-    unsigned MaxCallFrameSize;
-
+  unsigned MaxCallFrameSize;
 };
+//@1 }
 
 } // end of namespace llvm
 
 #endif // CPU0_MACHINE_FUNCTION_INFO_H
+
