@@ -38,6 +38,8 @@ public:
             std::optional<Reloc::Model> RM, std::optional<CodeModel::Model> CM,
             CodeGenOpt::Level OL, bool JIT);
     ~RISCVCPUTargetMachine() {};
+        
+    TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
 
 };
 

@@ -1,3 +1,5 @@
-// [ch3]
+def RISCVCPUInstrInfo : InstrInfo;
 
-def RISCVCPU : Target {}
+def RISCVCPU : Target {
+    let InstructionSet =RISCVCPUInstrInfo;
+}
