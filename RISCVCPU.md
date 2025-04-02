@@ -1,170 +1,248 @@
-# 总结
 
-参考：  https://pages.dogdog.run/toolchain/llvm_toy_riscv_backend.html
+# RISCVCPU
 
-## ch1 --- 生成识别llc
+暂时使用Toy的文件结构
 
-1. `CMakeLists.txt`：在根目录和 `lib/Target/RISCVCPU `下都有这个文件。通常，CMakeLists.txt是CMake的构建配置文件，用来定义如何编译和链接项目中的各个组件。根目录的CMakeLists.txt应该控制整个项目的构建，而子目录下的则处理该子模块的构建。
-2. `include/llvm/TargetParser/Triple.h`：这个看起来像是LLVM中处理目标平台三元组（比如x86_64-unknown-linux-gnu）的头文件。Triple类可能用于解析和处理目标平台的架构、厂商、操作系统等信息。
-3. `lib/Target/RISCVCPU `目录下的几个文件和子目录：
-   • `CMakeLists.txt`：应该是构建RISCVCPU目标的后端代码的配置。
-   • `TargetDesc`和 `TargetInfo`子目录：通常，在LLVM中，TargetInfo提供目标的基本信息（如寄存器、指令集），而TargetDesc处理目标描述，比如如何生成代码、处理ABI等。
-   • `RISCVCPUTargetMachine.cpp`：这个文件可能实现了RISCVCPU目标的目标机器（TargetMachine），这是LLVM后端的重要组成部分，负责将LLVM IR转换为目标平台的机器代码。
+```
+tree -L 2
+.
+├── CMakeLists.txt
+├── README.md
+├── TargetDesc
+│   ├── CMakeLists.txt
+│   ├── ToyAsmBackend.cpp
+│   ├── ToyAsmBackend.h
+│   ├── ToyBaseInfo.h
+│   ├── ToyELFObjectWriter.cpp
+│   ├── ToyELFObjectWriter.h
+│   ├── ToyFixupKinds.h
+│   ├── ToyInstPrinter.cpp
+│   ├── ToyInstPrinter.h
+│   ├── ToyMCCodeEmitter.cpp
+│   ├── ToyMCCodeEmitter.h
+│   ├── ToyMCExpr.cpp
+│   ├── ToyMCExpr.h
+│   ├── ToyTargetDesc.cpp
+│   ├── ToyTargetDesc.h
+│   ├── ToyTargetStreamer.cpp
+│   └── ToyTargetStreamer.h
+├── TargetInfo
+│   ├── CMakeLists.txt
+│   └── ToyTargetInfo.cpp
+├── TODO.org
+├── ToyAsmPrinter.cpp
+├── ToyAsmPrinter.h
+├── ToyCallingConv.td
+├── ToyDAGToDAGISel.cpp
+├── ToyDAGToDAGISel.h
+├── ToyFrameLowering.cpp
+├── ToyFrameLowering.h
+├── ToyInstrFormats.td
+├── ToyInstrInfo.cpp
+├── ToyInstrInfo.h
+├── ToyInstrInfo.td
+├── ToyISelLowering.cpp
+├── ToyISelLowering.h
+├── ToyMCInstLower.cpp
+├── ToyMCInstLower.h
+├── ToyRegisterInfo.cpp
+├── ToyRegisterInfo.h
+├── ToyRegisterInfo.td
+├── ToySchedule.td
+├── ToySubtarget.cpp
+├── ToySubtarget.h
+├── ToySubtarget.td
+├── ToyTargetMachine.cpp
+├── ToyTargetMachine.h
+├── ToyTargetObjectFile.cpp
+├── ToyTargetObjectFile.h
+└── Toy.td
 
-接下来，需要确认这些目录和文件在LLVM项目中的典型作用。LLVM的后端通常包括目标描述、指令选择、代码生成等部分。每个目标（比如ARM、X86）都有自己的目录，结构类似。因此，`lib/Target/RISCVCPU`可能是一个自定义的LLVM后端，用于某个名为“RISCVCPU”的架构。
+```
 
-Triple.h属于TargetParser模块，负责解析三元组字符串，这在LLVM中用于确定目标平台的属性。这个头文件可能被多个后端共享，用于处理平台相关的逻辑。
+## 主要文件作用
 
-TargetInfo和TargetDesc子目录中的代码可能分别定义了RISCVCPU架构的寄存器、指令集、调用约定（TargetInfo）以及如何生成目标代码、处理ELF/MachO/COFF文件格式（TargetDesc）。
+### **一、顶层文件**
 
-RISCVCPUTargetMachine.cpp可能实现了RISCVCPUTargetMachine类，该类继承自LLVMTargetMachine，负责协调整个代码生成流程，包括指定数据布局、ABI信息，以及注册Pass（优化和转换步骤）来生成机器代码。
-
-### **1. 根目录下的 `CMakeLists.txt`**
-
-• **作用**：定义整个LLVM项目的顶层构建规则。
-• **关键功能**：
-  • 包含全局编译选项（如 `LLVM_ENABLE_PROJECTS`指定子项目）。
-  • 配置LLVM核心库、工具链依赖关系和安装路径。
-  • 通过 `add_subdirectory(lib/Target/RISCVCPU)`引入自定义目标后端。
+1. **CMakeLists.txt**• **作用**：项目主构建配置，集成LLVM构建系统并组织子模块（如 `add_subdirectory(TargetDesc)`）。
+   • **涉及类**：通过CMake宏调用LLVM的 `AddLLVM`和 `HandleLLVMOptions`模块。
+2. **README.md**• **作用**：项目说明文档，描述架构特性、构建步骤及测试方法。
+3. **TODO.org**
+   • **作用**：开发任务跟踪文档，记录待实现功能或修复的Bug。
 
 ---
 
-### **2. `include/llvm/TargetParser/Triple.h`**
+### **二、目标描述（TargetDesc/）**
 
-• **作用**：处理平台三元组（**Target Triple**）的解析和操作。
-• **关键功能**：
-  • 解析形如 `arch-vendor-os-environment`的三元组（例如 `riscv64-unknown-linux-gnu`）。
-  • 提供接口获取架构（`getArch`）、操作系统（`getOS`）、ABI（`getEnvironment`）等信息。
-  • 被LLVM工具链（如 `clang`、`llc`）用于确定目标平台的默认配置。
-
----
-
-### **3. `lib/Target/RISCVCPU/`目录**
-
-#### **3.1 `CMakeLists.txt`**
-
-• **作用**：定义如何编译 `RISCVCPU` 目标后端的代码。
-• **关键内容**：
-  • 声明目标名称：`LLVM_TARGET_DEFINITIONS = `RISCVCPU``。
-  • 添加源码文件（如 `RISCVCPUTargetMachine.cpp`）。
-  • 链接依赖库（如 `LLVMTarget`、`LLVMCodeGen`）。
-
-#### **3.2 `TargetDesc/`和 `TargetInfo/`子目录**
-
-• **`TargetInfo/`**：
-  • **作用**：定义目标的基本信息。
-  • **关键文件**：
-    ◦ `RISCVCPUTargetInfo.cpp`：注册目标名称和描述（`TargetRegistry`）。
-• **`TargetDesc/`**：
-  • **作用**：生成目标机器代码的描述和工具。
-  • **关键文件**：
-    ◦ `RISCVCPUMCTargetDesc.cpp`：定义ELF/MachO/COFF等目标文件格式支持。
-
-#### **3.3 `RISCVCPUTargetMachine.cpp`**
-
-• **作用**：实现 `RISCVCPU`目标的核心机器模型。
-• **关键功能**：
-  • 继承 `LLVMTargetMachine`，定义数据布局（`DataLayout`）和ABI规则。
-  • 注册代码生成流程（如添加 `Pass`：指令选择、寄存器分配、代码优化）。
-  • 配置目标特定的选项（如启用或禁用某些指令扩展）。
+4. **ToyTargetDesc.cpp/.h**• **作用**：定义目标机器的全局描述符（寄存器集、指令集特性），通过 `TargetMachine`类提供访问接口。
+   • **涉及类**：`ToyTargetDesc`继承自 `TargetMachine`，包含 `getInstrInfo()`等方法。
+5. **ToyAsmBackend.cpp/.h**• **作用**：汇编器后端，处理重定位、代码布局及ELF文件生成。
+   • **涉及类**：`MCObjectWriter`和 `MCAsmBackend`的子类。
+6. **ToyELFObjectWriter.cpp/.h**• **作用**：生成ELF格式目标文件，定义段布局和符号表结构。
+   • **涉及类**：`ELFObjectWriter`的子类。
+7. **ToyInstPrinter.cpp/.h**• **作用**：控制汇编指令的文本输出格式。
+   • **涉及类**：`MCInstPrinter`的子类，重写 `printInstruction()`方法。
+8. **ToyMCCodeEmitter.cpp/.h**• **作用**：将机器指令编码为二进制格式。
+   • **涉及类**：`MCCodeEmitter`的子类，实现 `encodeInstruction()`。
+9. **ToyMCExpr.cpp/.h**• **作用**：处理目标相关的表达式（如符号地址计算）。
+   • **涉及类**：`MCExpr`的子类，用于重定位和符号引用。
+10. **ToyFixupKinds.h**
+    ◦ **作用**：定义重定位类型（如PC相对偏移、绝对地址）。
 
 ---
 
-### **4. 模块交互关系**
+### **三、目标信息（TargetInfo/）**
 
-| 模块                      | 依赖关系                             | 输出产物                      |
-| ------------------------- | ------------------------------------ | ----------------------------- |
-| `TargetParser`          | 被 `clang`、`llvm-mc`等工具使用  | 解析平台三元组                |
-| `TargetInfo`            | 依赖 `LLVMSupport`、`LLVMTarget` | 注册目标到LLVM全局目标列表    |
-| `TargetDesc`            | 依赖 `LLVMMC`、`LLVMCodeGen`     | 生成目标代码和汇编器/反汇编器 |
-| `RISCVCPUTargetMachine` | 依赖 `TargetInfo`、`TargetDesc`  | 生成 `llc`可识别的目标后端  |
+11. **ToyTargetInfo.cpp**
+    ◦ **作用**：向LLVM注册目标架构，声明目标三元组（Triple）。
+    ◦ **涉及类**：通过 `TargetRegistry::RegisterTarget`注册目标。
 
-### 5. 编译与测试
+---
 
-```shell
- mkdir build
-    pushd build
-    cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang \
-          -DLLVM_TARGETS_TO_BUILD=RISCVCPU -DLLVM_ENABLE_PROJECTS="clang" \
-          -DLLVM_OPTIMIZED_TABLEGEN=On -DLLVM_PARALLEL_LINK_JOBS=1 -G "Ninja" ../llvm
-    ninja llc
-    popd
-```
+### **四、指令集定义（.td文件）**
 
-```
-$ ./build/bin/llc --version
-LLVM (http://llvm.org/):
-  LLVM version 17.0.0git
-  DEBUG build with assertions.
-  Default target: 
-  Host CPU: goldmont
+12. **ToyInstrFormats.td**◦ **作用**：定义指令的二进制编码格式（如操作码、寄存器字段）。
+    ◦ **涉及类**：通过TableGen生成 `Instruction`类的子类。
+13. **ToyInstrInfo.td**◦ **作用**：声明指令的操作数、编码规则及语义，匹配LLVM IR到目标指令。
+    ◦ **涉及类**：`TargetInstrInfo`的子类，定义指令模式（Pattern）。
+14. **ToyRegisterInfo.td**◦ **作用**：定义寄存器的名称、类别及分配策略。
+    ◦ **涉及类**：`RegisterClass`和 `TargetRegisterInfo`的子类。
+15. **ToyCallingConv.td**◦ **作用**：指定函数调用时的参数传递规则（如寄存器/栈传递）。
+16. **ToySchedule.td**
+    ◦ **作用**：描述流水线调度策略（指令延迟、吞吐量）。
+    ◦ **涉及类**：`SchedMachineModel`的子类。
 
-  Registered Targets:
-    riscvcpu - The RISCVCPU backend
-```
+---
 
-```
- clang toy_test/test.c -c -emit-llvm -O0 -o /tmp/test.bc
-llvm-dis /tmp/test.bc
-cat /tmp/test.ll
-./build/bin/llc /tmp/test.bc -march=toy
+### **五、代码生成核心**
 
-```
+17. **ToyISelLowering.cpp/.h**◦ **作用**：将LLVM IR降级为目标指令的中间表示（DAG节点）。
+    ◦ **涉及类**：`TargetLowering`的子类，实现 `LowerOperation()`方法。
+18. **ToyDAGToDAGISel.cpp/.h**◦ **作用**：从DAG到目标指令的选择逻辑，实现模式匹配。
+    ◦ **涉及类**：`SelectionDAGISel`的子类，重写 `Select()`方法。
+19. **ToyAsmPrinter.cpp/.h**◦ **作用**：生成汇编代码，处理函数/变量的输出格式。
+    ◦ **涉及类**：`AsmPrinter`的子类，实现 `emitInstruction()`。
+20. **ToyMCInstLower.cpp/.h**
+    ◦ **作用**：将LLVM机器指令转换为MCInst对象（用于二进制编码）。
+    ◦ **涉及类**：`MCInstLowering`的子类。
 
-```
-/build/bin/llc  /tmp/test.bc -march=riscvcpu
-llc: /home/shaokai/Desktop/work/llvm-project-riscv/llvm/tools/llc/llc.cpp:575: auto compileModule(char **, LLVMContext &)::(anonymous class)::operator()(StringRef, StringRef) const: Assertion `Target && "Could not allocate target machine!"' failed.
-PLEASE submit a bug report to https://github.com/llvm/llvm-project/issues/ and include the crash backtrace.
-Stack dump:
-0.      Program arguments: ./build/bin/llc /tmp/test.bc -march=riscvcpu
-```
+---
 
-报错原因：
+### **六、目标机器配置**
 
-```
-/* NOTE: 由于 LLVMInitializeToyTarget 没有实现, 导致
- * TheTarget.TargetMachineCtorFn 没有定义, TheTarget->createTargetMachine 返回
- * NULL */
-Target = std::unique_ptr<TargetMachine>(TheTarget->createTargetMachine(
-    TheTriple.getTriple(), CPUStr, FeaturesStr, Options, RM,
-    codegen::getExplicitCodeModel(), OLvl));
-assert(Target && "Could not allocate target machine!");
-```
+21. **ToyTargetMachine.cpp/.h**◦ **作用**：目标机器的入口类，协调优化与代码生成流程。
+    ◦ **涉及类**：继承自 `LLVMTargetMachine`，管理 `Subtarget`和 `DataLayout`。
+22. **ToySubtarget.cpp/.h**◦ **作用**：定义处理器子目标特性（如扩展指令支持）。
+    ◦ **涉及类**：`TargetSubtargetInfo`的子类，包含调度模型和指令集标志。
+23. **ToyFrameLowering.cpp/.h**
+    ◦ **作用**：处理栈帧布局（如局部变量分配和过程调用）。
+    ◦ **涉及类**：`TargetFrameLowering`的子类，实现 `emitPrologue()`。
 
+---
 
+### **七、辅助文件**
 
-## **扩展阅读**
+24. **ToyTargetObjectFile.cpp/.h**◦ **作用**：定义目标文件格式细节（如段布局和符号重定位）。
+    ◦ **涉及类**：`TargetLoweringObjectFile`的子类。
+25. **ToyBaseInfo.h**
+    ◦ **作用**：声明目标架构的公共常量（如寄存器编号、指令编码掩码）。
 
-• **LLVM官方文档**：[Writing an LLVM Backend](https://llvm.org/docs/WritingAnLLVMBackend.html)
+## 具体步骤
 
-```
-$> ./build/bin/llc --version
-LLVM (http://llvm.org/):
-  LLVM version 15.0.0git
-  DEBUG build with assertions.
-  Default target: x86_64-unknown-linux-gnu
-  Host CPU: skylake
+## ch1
 
-  Registered Targets:
-    toy - Toy RISC-V backend
+## ch2
 
-$> clang toy_test/test.c -c -emit-llvm -O0 -o /tmp/test.bc
-$> ./build/bin/llc /tmp/test.bc -march=toy
+## ch3
 
-llc: /home/sunway/source/llvm-toy/llvm/tools/llc/llc.cpp:559: auto
-compileModule(char **, llvm::LLVMContext &)::(anonymous
-class)::operator()(llvm::StringRef) const: Assertion `Target && "Could not
-allocate target machine!"' failed.
-```
+## ch4
 
-报错的原因是:
+## ch5
 
-```
-/* NOTE: 由于 LLVMInitializeRISCVTarget 没有实现, 导致
- * TheTarget.TargetMachineCtorFn 没有定义, TheTarget->createTargetMachine 返回
- * NULL */
-Target = std::unique_ptr<TargetMachine>(TheTarget->createTargetMachine(
-    TheTriple.getTriple(), CPUStr, FeaturesStr, Options, RM,
-    codegen::getExplicitCodeModel(), OLvl));
-assert(Target && "Could not allocate target machine!");
-```
+## ch6
+
+## ch7
+
+## ch8
+
+## ch9
+
+## ch10
+
+## ch11
+
+## ch12
+
+## ch13
+
+## ch14
+
+## ch15
+
+## ch16
+
+## ch17
+
+## ch18
+
+## ch19
+
+## ch20
+
+## ch21
+
+## ch22
+
+## ch23
+
+## ch24
+
+## ch25
+
+## ch26
+
+## ch27
+
+## ch28
+
+## ch29
+
+## ch30
+
+## ch31
+
+## ch32
+
+## ch33
+
+## ch34
+
+## ch35
+
+## ch36
+
+## ch37
+
+## ch38
+
+## ch39
+
+## ch40
+
+## ch41
+
+## ch42
+
+## ch43
+
+## ch44
+
+## ch45
+
+## ch46
+
+## ch47
+
+## ch48
+
+## ch49
