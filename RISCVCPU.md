@@ -1,5 +1,6 @@
+# RISCVCPU 资料
 
-# RISCVCPU
+## 主要文件作用
 
 暂时使用Toy的文件结构
 
@@ -7,7 +8,6 @@
 tree -L 2
 .
 ├── CMakeLists.txt
-├── README.md
 ├── TargetDesc
 │   ├── CMakeLists.txt
 │   ├── ToyAsmBackend.cpp
@@ -29,7 +29,6 @@ tree -L 2
 ├── TargetInfo
 │   ├── CMakeLists.txt
 │   └── ToyTargetInfo.cpp
-├── TODO.org
 ├── ToyAsmPrinter.cpp
 ├── ToyAsmPrinter.h
 ├── ToyCallingConv.td
@@ -60,17 +59,10 @@ tree -L 2
 
 ```
 
-## 主要文件作用
-
 ### **一、顶层文件**
 
 1. **CMakeLists.txt**• **作用**：项目主构建配置，集成LLVM构建系统并组织子模块（如 `add_subdirectory(TargetDesc)`）。
    • **涉及类**：通过CMake宏调用LLVM的 `AddLLVM`和 `HandleLLVMOptions`模块。
-2. **README.md**• **作用**：项目说明文档，描述架构特性、构建步骤及测试方法。
-3. **TODO.org**
-   • **作用**：开发任务跟踪文档，记录待实现功能或修复的Bug。
-
----
 
 ### **二、目标描述（TargetDesc/）**
 
@@ -147,102 +139,117 @@ tree -L 2
 25. **ToyBaseInfo.h**
     ◦ **作用**：声明目标架构的公共常量（如寄存器编号、指令编码掩码）。
 
-## 具体步骤
 
-## ch1
 
-## ch2
+## 缩写参数解释
 
-## ch3
+在支持LLVM后端时一些参数使用了约定俗成的缩写，不好理解意思
 
-## ch4
+| 缩写 | 全称 | 意思 |
+| ---- | ---- | ---- |
+|      |      |      |
+|      |      |      |
 
-## ch5
 
-## ch6
 
-## ch7
+## 实现步骤
 
-## ch8
+参照sunway提交记录
 
-## ch9
+### ch1
 
-## ch10
+### ch2
 
-## ch11
+### ch3
 
-## ch12
+### ch4
 
-## ch13
+### ch5
 
-## ch14
+### ch6
 
-## ch15
+### ch7
 
-## ch16
+### ch8
 
-## ch17
+### ch9
 
-## ch18
+### ch10
 
-## ch19
+### ch11
 
-## ch20
+### ch12
 
-## ch21
+### ch13
 
-## ch22
+#### ch14
 
-## ch23
+### ch15
 
-## ch24
+### ch16
 
-## ch25
+### ch17
 
-## ch26
+### ch18
 
-## ch27
+### ch19
 
-## ch28
+### ch20
 
-## ch29
+### ch21
 
-## ch30
+### ch22
 
-## ch31
+### ch23
 
-## ch32
+### ch24
 
-## ch33
+### ch25
 
-## ch34
+### ch26
 
-## ch35
+### ch27
 
-## ch36
+### ch28
 
-## ch37
+### ch29
 
-## ch38
+### ch30
 
-## ch39
+### ch31
 
-## ch40
+### ch32
 
-## ch41
+### ch33
 
-## ch42
+### ch34
 
-## ch43
+### ch35
 
-## ch44
+### ch36
 
-## ch45
+### ch37
 
-## ch46
+### ch38
 
-## ch47
+### ch39
 
-## ch48
+### ch40
 
-## ch49
+### ch41
+
+### ch42
+
+### ch43
+
+### ch44
+
+### ch45
+
+### ch46
+
+### ch47
+
+### ch48
+
+### ch49
