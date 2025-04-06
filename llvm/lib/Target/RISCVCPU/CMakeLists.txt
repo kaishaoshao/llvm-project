@@ -9,6 +9,9 @@ tablegen(LLVM RISCVCPUGenSubtargetInfo.inc -gen-subtarget)
 # 使用TableGen工具生成与目标架构相关的指令选择信息文件
 tablegen(LLVM RISCVCPUGenDAGISel.inc -gen-dag-isel)
 
+# 
+tablegen(LLVM RISCVCPUGenAsmWriter.inc --gen-asm-writer)
+
 # 目标标记为公共的TableGen目标，使其可在其他模块中使用
 add_public_tablegen_target(RISCVCPUCommonTableGen)
 

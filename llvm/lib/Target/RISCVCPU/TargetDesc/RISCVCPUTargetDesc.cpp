@@ -4,6 +4,11 @@
 // - 指令/寄存器/子目标信息
 //===----------------------------------------------------------------------===//
 
+#include "RISCVCPUInstPrinter.h"          // RISC-V指令打印器（用于汇编/反汇编）
+#include "llvm/MC/MCInst.h"
+#include "llvm/MC/MCInstPrinter.h"
+#include "llvm/TargetParser/Triple.h"
+
 #include <llvm/MC/TargetRegistry.h>        // 目标机注册表（管理目标架构注册）
 #include <llvm/MC/MCAsmInfo.h>             // 汇编信息(定义汇编语法规则，如注释符号、对齐方式)
 #include <llvm/MC/MCInstrInfo.h>           // 指令元数据（操作码、指令格式、操作数约束）
@@ -97,6 +102,17 @@ static MCRegisterInfo *createRISCVMCRegisterInfo(const Triple &TT) {
   return RegInfo;
 }
 
+
+static MCInstPrinter *createRISCVCPUInstPrinter(Triple const &T,
+                                                unsigned SyntaxVariant,
+                                                MCAsmInfo const &MAI,
+                                                MCInstrInfo const &MII,
+                                                MCRegisterInfo const &MRI) {
+
+    return new RISCVCPUInstPrinter(MAI, MII, MRI);
+}
+
+
 //===----------------------------------------------------------------------===//
 // LLVM 目标机MC组件注册入口
 // 职责：向LLVM注册RISC-V的MC相关组件创建函数
@@ -118,4 +134,8 @@ extern "C" void LLVMInitializeRISCVCPUTargetMC() {
   // 注册汇编信息创建函数
   // 控制汇编输出格式（如objdump的输出风格）
   TargetRegistry::RegisterMCAsmInfo(TheRISCVCPUTarget, createRISCVCPUMCAsmInfo);
+
+  // 注册指令打印器创建函数
+  // 用于将指令转换为汇编字符串（如汇编器/反汇编器使用）
+  TargetRegistry::RegisterMCInstPrinter(TheRISCVCPUTarget, createRISCVCPUInstPrinter);
 }
