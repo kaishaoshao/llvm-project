@@ -102,7 +102,20 @@ static MCRegisterInfo *createRISCVMCRegisterInfo(const Triple &TT) {
   return RegInfo;
 }
 
-
+/**
+ * 创建RISC-V CPU指令打印机
+ *
+ * 该函数用于生成一个RISC-V
+ * CPU指令打印机实例，该实例能够根据提供的信息打印出符合特定语法变体的指令
+ *
+ * @param T 代表目标系统的Triple信息，用于确定指令集架构
+ * @param SyntaxVariant 语法变体的标识符，用于选择不同的指令语法风格
+ * @param MAI 提供有关汇编语言的信息，如注释规则和指令格式
+ * @param MII 提供有关指令集的信息，包括指令的操作码和格式
+ * @param MRI 提供有关寄存器的信息，包括寄存器的名称和编号
+ *
+ * @return 返回一个MCInstPrinter的实例，用于打印指令
+ */
 static MCInstPrinter *createRISCVCPUInstPrinter(Triple const &T,
                                                 unsigned SyntaxVariant,
                                                 MCAsmInfo const &MAI,
