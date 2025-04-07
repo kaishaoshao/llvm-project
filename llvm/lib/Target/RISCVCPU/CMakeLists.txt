@@ -18,6 +18,7 @@ add_public_tablegen_target(RISCVCPUCommonTableGen)
 add_llvm_target(RISCVCPUCodeGen
     RISCVCPUTargetMachine.cpp
     RISCVCPUDAGToDAGISel.cpp
+    RISCVCPUAsmPrinter.cpp
 )
 
 # 定义目标的基本信息
