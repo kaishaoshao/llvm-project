@@ -171,6 +171,8 @@ tree -L 2
 
 ### ch7
 
+这里对于codegen文件的修改主要看使用的pass
+
 ### ch8
 
 ### ch9
