@@ -19,6 +19,10 @@
 
 namespace llvm {
 class RISCVCPUTargetMachine : public LLVMTargetMachine {
+private:
+  TargetLoweringObjectFile *mTLOF; // 目标机器对象文件信息
+
+
 public:
     /// @brief RISCVCPUTargetMachine 是LLVM中用于表示RISCVCPU目标机器的类，
     ///                 其构造函数参数用于配置目标机器的各种属性 
@@ -41,6 +45,7 @@ public:
         
     TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
 
+    TargetLoweringObjectFile *getObjFileLowering() const override;
 };
 
 }

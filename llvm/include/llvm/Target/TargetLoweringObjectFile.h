@@ -14,9 +14,9 @@
 #ifndef LLVM_TARGET_TARGETLOWERINGOBJECTFILE_H
 #define LLVM_TARGET_TARGETLOWERINGOBJECTFILE_H
 
-#include "llvm/MC/MCObjectFileInfo.h"
-#include "llvm/MC/MCRegister.h"
-#include <cstdint>
+#include <llvm/MC/MCObjectFileInfo.h>
+#include <llvm/MC/MCRegister.h>
+#include <llvm/Target/TargetLoweringObjectFile.h>
 
 namespace llvm {
 

@@ -1,5 +1,7 @@
 #include "RISCVCPUTargetMachine.h"
 #include "RISCVCPUDAGToDAGISel.h"
+#include "RISCVCPUTargetObjectFile.h"
+#include "RISCVCPUTargetObjectFile.h"
 
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/CodeGen/TargetPassConfig.h>
@@ -35,9 +37,14 @@ RISCVCPUTargetMachine::RISCVCPUTargetMachine(
         TT, CPU, FS, Options, 
         Reloc::Static,   // 默认静态重定位（适合裸机环境）
         CodeModel::Small,// 小代码模型（代码/数据地址在32位范围内）
-        OL) {
+        OL), mTLOF(new RISCVCPUTargetObjectFile()) {
     initAsmInfo(); // 初始化汇编器信息（如指令格式、寄存器名称等）[2](@ref)
 }
+
+TargetLoweringObjectFile *RISCVCPUTargetMachine::getObjFileLowering() const {
+    return mTLOF;
+}
+
 
 /// RISC-V 编译流程配置类（继承自 TargetPassConfig）
 class RISCVCPUPassConfig : public TargetPassConfig {
