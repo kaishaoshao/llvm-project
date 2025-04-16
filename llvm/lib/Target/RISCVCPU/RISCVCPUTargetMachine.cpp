@@ -2,6 +2,7 @@
 #include "RISCVCPUDAGToDAGISel.h"
 #include "RISCVCPUTargetObjectFile.h"
 #include "RISCVCPUTargetObjectFile.h"
+#include "llvm/MC/MCSubtargetInfo.h"
 
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/CodeGen/TargetPassConfig.h>
@@ -27,22 +28,34 @@ extern "C" void LLVMInitializeRISCVCPUTarget() {
 ///   RM: 重定位模型（默认为静态 Reloc::Static）
 ///   CM: 代码模型（默认为小模型 CodeModel::Small）
 ///   OL: 优化级别（如 O0/O2/O3）
-RISCVCPUTargetMachine::RISCVCPUTargetMachine(
-    Target const &T, Triple const &TT, StringRef CPU, StringRef FS,
-    TargetOptions const &Options, std::optional<Reloc::Model> RM,
-    std::optional<CodeModel::Model> CM, CodeGenOpt::Level OL, bool JIT)
-    : LLVMTargetMachine(T, 
-        // 数据布局字符串（定义硬件特性）[4](@ref)
-        "e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64", 
-        TT, CPU, FS, Options, 
-        Reloc::Static,   // 默认静态重定位（适合裸机环境）
-        CodeModel::Small,// 小代码模型（代码/数据地址在32位范围内）
-        OL), mTLOF(new RISCVCPUTargetObjectFile()) {
-    initAsmInfo(); // 初始化汇编器信息（如指令格式、寄存器名称等）[2](@ref)
+RISCVCPUTargetMachine::RISCVCPUTargetMachine(Target const &T, Triple const &TT,
+                                             StringRef CPU, StringRef FS,
+                                             TargetOptions const &Options,
+                                             std::optional<Reloc::Model> RM,
+                                             std::optional<CodeModel::Model> CM,
+                                             CodeGenOpt::Level OL, bool JIT)
+    : LLVMTargetMachine(
+          T,
+          // 数据布局字符串（定义硬件特性）[4](@ref)
+          "e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64", TT, CPU, FS,
+          Options,
+          Reloc::Static,    // 默认静态重定位（适合裸机环境）
+          CodeModel::Small, // 小代码模型（代码/数据地址在32位范围内）
+          OL),
+      mTLOF(new RISCVCPUTargetObjectFile()),
+      mSubtarget(new RISCVCPUSubtarget(TT, CPU, CPU, FS, *this)) {
+  initAsmInfo(); // 初始化汇编器信息（如指令格式、寄存器名称等）[2](@ref)
 }
 
 TargetLoweringObjectFile *RISCVCPUTargetMachine::getObjFileLowering() const {
     return mTLOF;
+}
+
+// 获取子目标信息
+RISCVCPUSubtarget const *
+RISCVCPUTargetMachine::getSubtargetImpl(Function const &F) const {
+    // 获取函数的子目标信息
+    return mSubtarget;
 }
 
 

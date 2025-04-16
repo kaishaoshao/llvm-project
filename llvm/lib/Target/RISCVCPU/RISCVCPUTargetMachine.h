@@ -1,7 +1,9 @@
 #ifndef __RISCVCPU_TARGET_MACHINE_H__
 #define __RISCVCPU_TARGET_MACHINE_H__
 
-#include "llvm/Target/TargetMachine.h"
+#include <llvm/Target/TargetMachine.h>
+#include "RISCVCPUSubtarget.h"
+
 
 ///
 ///
@@ -21,7 +23,7 @@ namespace llvm {
 class RISCVCPUTargetMachine : public LLVMTargetMachine {
 private:
   TargetLoweringObjectFile *mTLOF; // 目标机器对象文件信息
-
+  RISCVCPUSubtarget *mSubtarget;
 
 public:
     /// @brief RISCVCPUTargetMachine 是LLVM中用于表示RISCVCPU目标机器的类，
@@ -46,6 +48,8 @@ public:
     TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
 
     TargetLoweringObjectFile *getObjFileLowering() const override;
+
+    RISCVCPUSubtarget const *getSubtargetImpl(Function const &F) const override;
 };
 
 }

@@ -20,6 +20,7 @@ add_llvm_target(RISCVCPUCodeGen
     RISCVCPUDAGToDAGISel.cpp
     RISCVCPUAsmPrinter.cpp
     RISCVCPUTargetObjectFile.cpp
+    RISCVCPUSubtarget.cpp
 )
 
 # 定义目标的基本信息
