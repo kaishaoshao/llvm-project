@@ -10,12 +10,12 @@ if [ ! -d "$SCRIPT_DIR/build" ]; then
 fi
 
 # 配置 CMake 并生成构建文件
-cmake -B "$SCRIPT_DIR/build"          \
-    -DCMAKE_BUILD_TYPE=Debug          \
-    -DBUILD_SHARED_LIBS=ON            \
-    -DLLVM_USE_LINKER=lld             \
-    -DLLVM_ENABLE_PROJECTS="clang"    \
-    -DLLVM_TARGETS_TO_BUILD="RISCV"   \
-    -DLLVM_OPTIMIZED_TABLEGEN=ON      \
-    -GNinja "$SCRIPT_DIR/llvm"        \
-    && ninja -C "$SCRIPT_DIR/build" -j8
+cmake -B "$SCRIPT_DIR/build"              \
+    -GNinja "$SCRIPT_DIR/llvm"            \
+    -DCMAKE_BUILD_TYPE=Release            \
+    -DBUILD_SHARED_LIBS=ON                \
+    -DLLVM_ENABLE_PROJECTS="mlir"         \
+    -DLLVM_TARGETS_TO_BUILD="ARM;RISCV;X86;NVPTX;AMDGPU"   \
+     -DLLVM_ENABLE_ASSERTIONS=ON          \
+    -DDEFAULT_SYSROOT=$SDKROOT            \
+    && ninja -C "$SCRIPT_DIR/build" -j$(sysctl -n hw.logicalcpu) 
