@@ -51,6 +51,7 @@ StringRef Triple::getArchTypeName(ArchType Kind) {
   case m68k:           return "m68k";
   case mips64:         return "mips64";
   case mips64el:       return "mips64el";
+  case mipsnano:       return "mipsnano";
   case mips:           return "mips";
   case mipsel:         return "mipsel";
   case msp430:         return "msp430";
@@ -407,6 +408,7 @@ Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
     .Case("mipsel", mipsel)
     .Case("mips64", mips64)
     .Case("mips64el", mips64el)
+    .Case("mipsnano", mipsnano)
     .Case("msp430", msp430)
     .Case("ppc64", ppc64)
     .Case("ppc32", ppc)
@@ -554,6 +556,7 @@ static Triple::ArchType parseArch(StringRef ArchName) {
           .Case("avr", Triple::avr)
           .Case("m68k", Triple::m68k)
           .Case("msp430", Triple::msp430)
+          .Case("mipsnano", Triple::mipsnano)
           .Cases("mips", "mipseb", "mipsallegrex", "mipsisa32r6", "mipsr6",
                  Triple::mips)
           .Cases("mipsel", "mipsallegrexel", "mipsisa32r6el", "mipsr6el",
@@ -917,6 +920,7 @@ static Triple::ObjectFormatType getDefaultFormat(const Triple &T) {
   case Triple::mips64el:
   case Triple::mips:
   case Triple::mipsel:
+  case Triple::mipsnano:
   case Triple::msp430:
   case Triple::nvptx64:
   case Triple::nvptx:
@@ -1611,6 +1615,7 @@ unsigned Triple::getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
   case llvm::Triple::m68k:
   case llvm::Triple::mips:
   case llvm::Triple::mipsel:
+  case llvm::Triple::mipsnano:
   case llvm::Triple::nvptx:
   case llvm::Triple::ppc:
   case llvm::Triple::ppcle:
@@ -1703,6 +1708,7 @@ Triple Triple::get32BitArchVariant() const {
   case Triple::m68k:
   case Triple::mips:
   case Triple::mipsel:
+  case Triple::mipsnano:
   case Triple::nvptx:
   case Triple::ppc:
   case Triple::ppcle:
@@ -1766,6 +1772,7 @@ Triple Triple::get64BitArchVariant() const {
   case Triple::kalimba:
   case Triple::lanai:
   case Triple::m68k:
+  case Triple::mipsnano:
   case Triple::msp430:
   case Triple::r600:
   case Triple::shave:
