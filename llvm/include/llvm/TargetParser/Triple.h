@@ -46,26 +46,27 @@ public:
   enum ArchType {
     UnknownArch,
 
-    arm,            // ARM (little endian): arm, armv.*, xscale
-    armeb,          // ARM (big endian): armeb
-    aarch64,        // AArch64 (little endian): aarch64
-    aarch64_be,     // AArch64 (big endian): aarch64_be
-    aarch64_32,     // AArch64 (little endian) ILP32: aarch64_32
-    arc,            // ARC: Synopsys ARC
-    avr,            // AVR: Atmel AVR microcontroller
-    bpfel,          // eBPF or extended BPF or 64-bit BPF (little endian)
-    bpfeb,          // eBPF or extended BPF or 64-bit BPF (big endian)
-    csky,           // CSKY: csky
-    dxil,           // DXIL 32-bit DirectX bytecode
-    hexagon,        // Hexagon: hexagon
-    loongarch32,    // LoongArch (32-bit): loongarch32
-    loongarch64,    // LoongArch (64-bit): loongarch64
-    m68k,           // M68k: Motorola 680x0 family
-    mips,           // MIPS: mips, mipsallegrex, mipsr6
-    mipsel,         // MIPSEL: mipsel, mipsallegrexe, mipsr6el
-    mips64,         // MIPS64: mips64, mips64r6, mipsn32, mipsn32r6
-    mips64el,       // MIPS64EL: mips64el, mips64r6el, mipsn32el, mipsn32r6el
-    msp430,         // MSP430: msp430
+    arm,         // ARM (little endian): arm, armv.*, xscale
+    armeb,       // ARM (big endian): armeb
+    aarch64,     // AArch64 (little endian): aarch64
+    aarch64_be,  // AArch64 (big endian): aarch64_be
+    aarch64_32,  // AArch64 (little endian) ILP32: aarch64_32
+    arc,         // ARC: Synopsys ARC
+    avr,         // AVR: Atmel AVR microcontroller
+    bpfel,       // eBPF or extended BPF or 64-bit BPF (little endian)
+    bpfeb,       // eBPF or extended BPF or 64-bit BPF (big endian)
+    csky,        // CSKY: csky
+    dxil,        // DXIL 32-bit DirectX bytecode
+    hexagon,     // Hexagon: hexagon
+    loongarch32, // LoongArch (32-bit): loongarch32
+    loongarch64, // LoongArch (64-bit): loongarch64
+    m68k,        // M68k: Motorola 680x0 family
+    mipsnano,    // MIPSNANO: mips32
+    mips,        // MIPS: mips, mipsallegrex, mipsr6
+    mipsel,      // MIPSEL: mipsel, mipsallegrexe, mipsr6el
+    mips64,      // MIPS64: mips64, mips64r6, mipsn32, mipsn32r6
+    mips64el,    // MIPS64EL: mips64el, mips64r6el, mipsn32el, mipsn32r6el
+    msp430,      // MSP430: msp430
     ppc,            // PPC: powerpc
     ppcle,          // PPCLE: powerpc (little endian)
     ppc64,          // PPC64: powerpc64, ppu
