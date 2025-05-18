@@ -477,6 +477,7 @@ set(LLVM_ALL_TARGETS
   Lanai
   LoongArch
   Mips
+  Nano
   MSP430
   NVPTX
   PowerPC
