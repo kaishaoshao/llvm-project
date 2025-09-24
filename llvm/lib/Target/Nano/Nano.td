@@ -1,6 +1,6 @@
-#include "llvm/Target/Target.td"
+include "llvm/Target/Target.td"
 
-#include "NanoRegisterInfo.td"
+include "NanoRegisterInfo.td"
 
 // 定义名为 “generic” 的通用处理器模型
 // NoSchedModel 表示没有特定的调度模型

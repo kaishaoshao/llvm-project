@@ -1,3 +1,6 @@
+tablegen(LLVM NanoGenRegisterInfo.inc -gen-register-info)
+add_public_tablegen_target(NanoCommonTableGen)
+
 # 定义一个名为 MipsNano 的组件组，用于逻辑上组织相关的代码生成模块
 add_llvm_component_group(Nano)
 
