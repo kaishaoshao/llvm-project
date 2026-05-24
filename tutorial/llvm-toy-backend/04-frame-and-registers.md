@@ -25,6 +25,29 @@
 - [ToyInstrInfo.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyInstrInfo.cpp)
 - [ToyCallingConv.td](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyCallingConv.td)
 
+## 先认识这三个类为什么会同时出现
+
+初学者看到这一节最常见的困惑是:
+
+- 栈帧不是应该由 `FrameLowering` 管吗?
+- 为什么 `RegisterInfo` 也在管?
+- 为什么 `InstrInfo` 也跑进来了?
+
+答案是: 栈帧处理不是一个类单独做完的, 而是三个人分工合作。
+
+- `FrameLowering`
+  决定函数入口和出口怎么调整栈, 也就是 “栈长什么样”
+- `RegisterInfo`
+  决定用哪个寄存器作为 frame 基准, 哪些寄存器保留, `FrameIndex` 最后怎么变成真实寻址
+- `InstrInfo`
+  决定真要保存 / 恢复寄存器时, 具体发哪条 load/store 指令
+
+如果用更生活化的话说:
+
+- `FrameLowering` 负责定方案
+- `RegisterInfo` 负责算地址和寄存器规则
+- `InstrInfo` 负责真正下指令
+
 ## 先建立正确的时序感
 
 ### `emitPrologue` / `emitEpilogue` 在什么时候执行
@@ -42,6 +65,15 @@
 
 这就是为什么教程反复强调 PEI 的时机。
 
+这里的 PEI 通常指 Prologue/Epilogue Insertion。  
+第一次学时你不用记住 pass 名字, 但要记住它的时机:
+
+- 前面大部分 codegen 先决定 “程序要做什么”
+- 到了比较后面, LLVM 才知道这个函数到底用了多少栈空间、哪些寄存器需要保存
+- 所以 prologue/epilogue 不可能太早生成
+
+这也是为什么很多和栈帧有关的 bug 都是“前面看起来没事, 后面突然炸”。
+
 ## `RegisterInfo` 负责什么
 
 这一节里最重要的接口有:
@@ -52,12 +84,34 @@
 - `getFrameRegister`
 - `eliminateFrameIndex`
 
+第一次读 [ToyRegisterInfo.h](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyRegisterInfo.h) 和 [ToyRegisterInfo.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyRegisterInfo.cpp) 时, 建议按下面这个顺序看:
+
+1. `getReservedRegs`
+2. `getFrameRegister`
+3. `getCalleeSavedRegs`
+4. `eliminateFrameIndex`
+
+这是因为前 3 个先帮你建立 “寄存器规则”, 最后一个才是 “把抽象栈对象落地”。
+
 ### 直觉理解
 
 - 哪些寄存器需要保存?
 - 哪些寄存器不能随便用?
 - 栈访问最终以哪个寄存器为基准?
 - `FrameIndex` 最终怎么变成真实地址?
+
+可以把这几个接口进一步翻成白话:
+
+- `getReservedRegs`
+  回答 “有哪些寄存器编译器自己不能拿来随便分配”
+- `getFrameRegister`
+  回答 “做栈访问时, 默认应该以谁为基准, `sp` 还是 `fp`”
+- `getCalleeSavedRegs`
+  回答 “如果函数里用到了这些寄存器, 进入函数时要先保存, 返回前要恢复”
+- `eliminateFrameIndex`
+  回答 “之前记成抽象栈槽的位置, 最后到底改写成哪一个寄存器加多少偏移”
+
+你会发现它们都和 “寄存器策略” 有关, 而不是和 “指令格式” 本身有关。
 
 ## `InstrInfo` 为什么也参与栈帧
 
@@ -68,10 +122,18 @@
 - `storeRegToStackSlot`
 - `loadRegFromStackSlot`
 
+第一次看 [ToyInstrInfo.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyInstrInfo.cpp) 时, 很容易忽略这两个函数, 觉得它们只是一些工具函数。  
+其实它们正是 LLVM 在问你的 target:
+
+- “如果我要把某个寄存器 spill 到栈上, 你希望我发哪条机器指令?”
+- “如果我要把它 reload 回来, 又该发哪条机器指令?”
+
 它们本质上是:
 
 - “帮 PEI 生成保存寄存器的机器指令”
 - “帮 PEI 生成恢复寄存器的机器指令”
+
+也就是说, `InstrInfo` 在这里并不是参与“栈布局设计”, 而是在参与 “执行设计好的动作”。
 
 ## `FrameIndex` 的本质
 
@@ -82,6 +144,17 @@
 - `FrameIndex`
 
 表示栈对象。
+
+第一次理解 `FrameIndex` 时, 你可以把它想成 “一个还没决算的栈槽编号”。
+
+编译器前半段之所以不急着立刻把它变成 `sp + 12`、`sp + 24`, 是因为那时很多信息还没最终稳定:
+
+- 栈帧总大小可能还会变
+- 还不确定会不会用 frame pointer
+- 还不确定 callee-saved registers 会占多少空间
+- 局部变量和临时 spill slot 的最终相对位置可能还会调整
+
+所以先用抽象编号表示, 等后面信息收齐了再统一结算。
 
 后面才在 `eliminateFrameIndex` 阶段把它改成:
 
@@ -98,19 +171,39 @@
 
 - `STORE ra, sp, offset`
 
+更准确一点说, 它做了两件事:
+
+1. 选一个真实基寄存器
+2. 计算最终偏移, 把 `FrameIndex` 操作数改写掉
+
+这一步完成后, 那条机器指令才真正具备了可以打印/编码的地址形式。
+
+如果这里没做好, 你后面即使到了 `AsmPrinter`, 也会因为还残留抽象操作数而出问题。
+
 ## 这一节最容易出的问题
 
 ### `storeRegToStackSlot` 没实现
 
 PEI 想 spill CSR 时会直接失败。
 
+这是因为 LLVM 已经知道 “这个寄存器得保存”, 但它不知道 “你这个架构要用哪条指令保存它”。
+
 ### `eliminateFrameIndex` 空实现
 
 看似前面都通了, 最后会在栈访问阶段卡死或者反复产生错误指令。
 
+这是因为中间阶段还能容忍抽象 `FrameIndex`, 但越往后越必须要真实地址。
+
 ### 忽略 constant offset
 
 只处理裸 `FrameIndex` 不够, 数组元素和结构体字段会带额外 offset。
+
+这一点非常像真实后端开发里的常见坑:
+
+- 你最开始用最简单例子测试都过了
+- 一碰到 `alloca` 后的带偏移访问或者聚合类型字段访问就错了
+
+原因往往不是大逻辑错了, 而是你只处理了 “`FI` 本身”, 没把附带偏移一起算进去。
 
 ## 注意事项
 
@@ -120,9 +213,16 @@ PEI 想 spill CSR 时会直接失败。
 
 三者分工不同, 不要混着理解。
 
+第一次读代码时, 建议你专门带着这三个问题去看:
+
+1. 谁决定栈增减指令插在哪里?
+2. 谁决定某个栈槽最后相对哪个寄存器寻址?
+3. 谁真正构造出那条 `store` / `load` 指令?
+
+你能把答案分别对回 `FrameLowering`、`RegisterInfo`、`InstrInfo`, 这一节就清楚很多了。
+
 ## 自查问题
 
 1. 为什么 `emitPrologue` 一定发生在寄存器分配之后?
 2. `storeRegToStackSlot` 和 `eliminateFrameIndex` 的职责为什么不能合并?
 3. `FrameIndex` 为什么要先保留成抽象形式, 而不是一开始就直接变成 `sp + offset`?
-

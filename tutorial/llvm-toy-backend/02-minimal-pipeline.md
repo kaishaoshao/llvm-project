@@ -35,11 +35,28 @@
 
 ## 这几个模块各自负责什么
 
+在读这些类之前, 你可以先记一个总原则:
+
+- 这一阶段出现的很多类, 不是因为它们已经“功能完整”
+- 而是因为 LLVM 的 codegen pipeline 需要它们先占住位置
+
+也就是说, 这一节的重点是 “让骨架站起来”, 不是 “每个模块都做完”
+
 ### `ToyDAGToDAGISel`
 
 把 SelectionDAG 节点选成 target 的机器指令。
 
 当前阶段它先是一个入口占位, 让 pass pipeline 能继续往下走。
+
+第一次读这个类时, 先只抓两个点:
+
+- 它属于 SelectionDAG 阶段
+- 它的输出已经是 `MachineInstr` 方向的目标相关表示
+
+你现在还不必把 matcher 细节看透, 但一定要知道:
+
+- `TargetLowering` 更像 “先把问题翻译成 target 能懂的话”
+- `DAGToDAGISel` 更像 “再把这些 DAG 节点选成具体指令”
 
 ### `ToyInstPrinter`
 
@@ -51,17 +68,52 @@
 - 它不做寄存器分配
 - 它不决定调用约定
 
+这是一个非常容易被误解的类。它名字里有 `Printer`, 很多人第一次会以为:
+
+- “那它是不是整个后端最后打印汇编的总入口?”
+
+其实不是。它只是专门负责:
+
+- 已经 lower 成 `MCInst` 之后
+- 把 opcode、寄存器、立即数格式化成汇编文本
+
+所以它更像 “汇编文本格式化器”, 而不是 codegen 主流程控制器。
+
 ### `ToyAsmPrinter`
 
 负责 `MachineInstr -> MCInst`。
 
 它和 `ToyInstPrinter` 的分工是这一节最重要的理解点。
 
+如果一定要给它一句最直白的描述:
+
+- `ToyAsmPrinter` 站在 codegen 和 MC 的交界处
+
+前面 LLVM 还在操作 `MachineInstr`, 到了它这里开始准备进入:
+
+- `MCInst`
+- 汇编文本
+- 机器码编码
+
+所以这个类在整体流水线中的位置非常关键。
+
 ### `ToyTargetObjectFile`
 
 负责 object file 相关的 section 和数据放置规则。
 
 即使你现在还不真正输出 `.o`, `AsmPrinter` 也会依赖它。
+
+第一次学时你可以先把它理解成:
+
+- “目标文件格式相关的后台规则对象”
+
+它平时不一定很显眼, 但一旦涉及:
+
+- 全局变量放哪个 section
+- 常量池放哪里
+- 某些符号怎么布局
+
+它就会参与进来。
 
 ### `ToySubtarget`
 
@@ -74,17 +126,47 @@
 
 LLVM 的很多 pass 都是先拿 `Subtarget`, 再从里面取这些对象。
 
+`Subtarget` 是第一阶段之后最值得你建立直觉的类之一。它不是单独干某个具体活, 而是:
+
+- 把 “这台具体 CPU 的能力” 聚合成一个对象
+
+第一次阅读它时, 你可以重点观察:
+
+- 它持有哪些成员对象
+- 构造函数里初始化了哪些能力
+- `TargetMachine` 是怎么把它暴露给别的 pass 的
+
 ### `ToyTargetLowering`
 
 负责 target-specific lowering。
 
 哪怕你暂时只支持很小的程序, 它也得存在, 因为函数返回和调用这类事情天然依赖 target。
 
+这是初学者最容易低估的类。很多人会想:
+
+- “我不是还没做复杂指令吗, 为什么这么早就要 `TargetLowering`?”
+
+因为 LLVM IR 里有很多语义不是 target-neutral 地直接变成机器指令的, 比如:
+
+- 函数参数怎么进来
+- 返回值怎么出去
+- 某些整数操作要不要扩展
+- 某个操作能不能直接用本机指令表示
+
+这些都需要 target 来给出答案。
+
 ### `ToyFrameLowering`
 
 负责 prologue / epilogue 和栈帧约定。
 
 这里先有最小骨架, 后续再逐步补行为。
+
+第一次看它时不要被“栈帧”三个字吓到。此时你只需要先记住:
+
+- 函数一进入时, 谁来决定 `sp` 怎么减?
+- 函数要返回时, 谁来决定 `sp` 怎么恢复?
+
+答案通常就是 `FrameLowering`。
 
 ## 为什么教程按这个顺序推进
 
@@ -126,6 +208,16 @@ LLVM 的很多 pass 都是先拿 `Subtarget`, 再从里面取这些对象。
 - `InstPrinter`
 - asm
 
+这条链你最好反复记。因为从这一节开始, 很多“我明明已经有指令了, 为什么还没出汇编”的困惑, 都是在这里解开的。
+
+更直观地说:
+
+- `DAGToDAGISel` 负责“选出机器指令”
+- `AsmPrinter` 负责“把机器指令变成 MC 层指令”
+- `InstPrinter` 负责“把 MC 层指令变成字符串”
+
+每一层都少不了。
+
 ## 注意事项
 
 - `InstPrinter` 处理的是 `MCInst`, 不是 `MachineInstr`
@@ -138,4 +230,3 @@ LLVM 的很多 pass 都是先拿 `Subtarget`, 再从里面取这些对象。
 1. `ToyAsmPrinter` 和 `ToyInstPrinter` 的边界在哪里?
 2. 为什么 `TargetLowering` 即使在后端很小的时候也必须存在?
 3. 为什么 `Subtarget` 会成为 `getRegisterInfo()` / `getInstrInfo()` 的统一入口?
-

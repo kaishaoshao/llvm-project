@@ -34,6 +34,23 @@
 - MCInst
 - asm / object file
 
+第一次学 LLVM 后端, 最容易犯的错是把这些层混在一起。你可以先用一句话抓住它们:
+
+- LLVM IR
+  还是目标无关的程序表示, 关心语义, 不关心具体寄存器和指令编码
+- SelectionDAG
+  是 codegen 前半段用来做指令选择和合法化的一种图结构
+- MachineInstr
+  已经是 “某个 target 的机器指令”, 但还不是最终文本汇编
+- MCInst
+  是更靠近汇编器和编码器的低层指令表示
+- asm / object file
+  才是最终用户能看到或链接器能处理的产物
+
+你以后看到某个类时, 第一反应都应该先问:
+
+- 它处理的是哪一层的数据结构?
+
 ### 关键模块对应关系
 
 - `TargetLowering`
@@ -52,6 +69,12 @@
   负责 `MCInst -> asm`
 - `MCCodeEmitter`
   负责 `MCInst -> binary`
+
+如果把这些模块按“谁最先接触源码、谁最后接近机器码”排一下, 大致就是:
+
+`TargetLowering` -> `DAGToDAGISel` -> `InstrInfo/RegisterInfo/FrameLowering` -> `AsmPrinter` -> `MCInstPrinter/MCCodeEmitter`
+
+这条顺序不是绝对的调用栈, 但非常适合刚入门时建立方向感。
 
 ## `.td` 和 `C++` 的分工
 
@@ -72,6 +95,50 @@
 - 栈帧处理
 - MachineInstr 构造
 - MC 层转换
+
+你可以先把 `.td` 和 `C++` 简化理解成:
+
+- `.td` 回答 “这个 target 有什么”
+- `C++` 回答 “这些东西在运行时怎么工作”
+
+例如:
+
+- 寄存器名字、寄存器类、指令格式, 更适合写在 `.td`
+- “某个局部变量最后离 `sp` 多远”, 更适合写在 `C++`
+- “函数参数先用 `a0/a1` 还是直接落栈”, 规则可写在 `.td`, 真正搬运参数的逻辑则在 `C++`
+
+这条分工理解清楚后, 你看到一个新文件时就更容易判断它为什么存在。
+
+## 先认识目录长什么样
+
+在一个 target 目录下, 你通常会看到几类文件:
+
+- `TargetInfo/`
+  做 target 名字注册, 让 LLVM “知道有这个后端”
+- `TargetDesc/` 或 `MCTargetDesc/`
+  做 MC 层描述和工厂注册
+- `XXXTargetMachine.*`
+  整个后端顶层入口
+- `XXXSubtarget.*`
+  某个 CPU / feature 组合的能力集合
+- `XXXISelLowering.*`
+  LLVM IR / DAG 到 target 语义的 lowering
+- `XXXDAGToDAGISel.*`
+  DAG 到机器指令选择
+- `XXXInstrInfo.*`
+  目标指令层面的行为
+- `XXXRegisterInfo.*`
+  寄存器、保留寄存器、frame register、FrameIndex 消解
+- `XXXFrameLowering.*`
+  栈帧布局与 prologue/epilogue
+- `XXXAsmPrinter.*`
+  `MachineInstr -> MCInst`
+- `XXXMCInstLower.*`
+  把单个机器操作数 lower 成 MC 层操作数
+- `*.td`
+  声明寄存器、指令、pattern、feature、calling convention 等
+
+第一次看到这些目录时不用急着全懂, 先知道 “这不是随便分的”, 而是在对应 LLVM codegen 的不同层。
 
 ## 为什么教程顺序重要
 
@@ -94,6 +161,14 @@ toy 教程的顺序恰好是把这些问题串成一条因果链。前一步的�
 - 第二遍顺着代码追调用链
 - 第三遍才尝试自己在当前仓库做一个独立 target
 
+更具体一点, 第一遍你甚至可以只做三件事:
+
+1. 看每节的 “必看文件”
+2. 弄清每个文件大概在流水线哪一层
+3. 记住这一节解决的报错是什么
+
+这样你第二遍再读实现时, 大脑里已经有“地图”了, 不会只是被函数名推着走。
+
 ## 注意事项
 
 - 不要上来先看 object file
@@ -106,4 +181,3 @@ toy 教程的顺序恰好是把这些问题串成一条因果链。前一步的�
 1. LLVM 后端中 `TargetLowering` 和 `AsmPrinter` 分别工作在哪一层?
 2. 为什么 `MCInstPrinter` 不应该直接处理 `MachineInstr`?
 3. 为什么要把学习顺序拆成多步, 而不是一次性实现所有模块?
-
