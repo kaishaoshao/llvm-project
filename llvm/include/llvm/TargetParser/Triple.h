@@ -74,6 +74,8 @@ public:
     amdgcn,         // AMDGCN: AMD GCN GPUs
     riscv32,        // RISC-V (32-bit): riscv32
     riscv64,        // RISC-V (64-bit): riscv64
+    miniriscv32,   // MiniRISC-V (32-bit): miniriscv32
+    miniriscv64,   // MiniRISC-V (64-bit): miniriscv64
     toyriscv32,     // TOYRISCV (32-bit): toyriscv32
     toyriscv64,     // TOYRISCV (64-bit): toyriscv64
     sparc,          // Sparc: sparc
