@@ -60,6 +60,96 @@
 - 把你的 target 拆成 LLVM 认识的几个组件库
 - 让 `LLVMInitializeToyTargetInfo` / `LLVMInitializeToyTarget` / `LLVMInitializeToyTargetMC` 分别落在正确的库里
 
+### CMake 里这些名字能不能随便取
+
+第一眼看到下面这些名字时, 很容易以为它们只是 CMake 变量风格问题:
+
+- `add_llvm_component_group(Toy)`
+- `add_llvm_target(ToyCodeGen ...)`
+- `add_llvm_library(LLVMToyInfo ...)`
+- `add_llvm_library(LLVMToyDesc ...)`
+
+其实它们不是完全随便取的, 只是“强约束程度”不一样。
+
+#### `add_llvm_component_group(Toy)`
+
+这里的 `Toy` 最好和下面这些名字保持一致:
+
+- target 目录名 `Toy`
+- 顶层 target 名 `Toy`
+- 你心里给这个后端起的正式名字
+
+它的作用更偏 “把这一组组件归类成同一个 target”。  
+所以这里虽然不是 C++ 类型名, 但和 target 身份关联很强。
+
+#### `add_llvm_target(ToyCodeGen ...)`
+
+这里的 `ToyCodeGen` 是这个 target 的 codegen 主库名字。
+
+它更多关联的是:
+
+- 构建目标名
+- 链接时的组件名
+- LLVM 按 target 组织 codegen 库时的命名习惯
+
+理论上你可以不用这个名字, 但工程上非常不建议。  
+LLVM 里几乎都会沿用:
+
+- `XXXCodeGen`
+
+这种形式。
+
+#### `add_llvm_library(LLVMToyInfo ...)`
+
+这里的 `LLVMToyInfo` 通常对应:
+
+- `TargetInfo` 这一层的库
+- `ToyTargetInfo.cpp`
+- `LLVMInitializeToyTargetInfo`
+
+它不是随便起个库名那么简单, 而是 LLVM target 组织里很稳定的一种约定:
+
+- `LLVM${TargetName}Info`
+
+#### `add_llvm_library(LLVMToyDesc ...)`
+
+这里的 `LLVMToyDesc` 通常对应:
+
+- `TargetDesc` / `MCTargetDesc` 这一层的库
+- `ToyTargetDesc.cpp`
+- `InstPrinter`
+- `MCCodeEmitter`
+- `AsmBackend`
+
+它也遵循 LLVM 很稳定的习惯:
+
+- `LLVM${TargetName}Desc`
+
+#### 最重要的不是“某个名字神奇”, 而是整套名字前后一致
+
+这些名字本身不是魔法关键字, 真正重要的是它们最好形成一整套一致命名:
+
+- target 目录: `Toy`
+- component group: `Toy`
+- codegen 库: `ToyCodeGen`
+- info 库: `LLVMToyInfo`
+- desc 库: `LLVMToyDesc`
+- 入口类: `ToyTargetMachine`
+- 初始化函数:
+  - `LLVMInitializeToyTargetInfo`
+  - `LLVMInitializeToyTarget`
+  - `LLVMInitializeToyTargetMC`
+
+这样你一眼就能看出它们属于同一个 target。
+
+如果你把 target 叫 `Toy`, 却把库起成:
+
+- `MyBackendCore`
+- `BackendInfo`
+- `BackendDesc`
+
+虽然某些情况下未必立刻编译失败, 但你后面会很难对照 LLVM 其他后端理解结构, 也更容易把库职责和初始化入口搞混。
+
 ### 3. Triple 架构登记
 
 - [llvm/include/llvm/TargetParser/Triple.h](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/llvm/include/llvm/TargetParser/Triple.h)
@@ -631,6 +721,558 @@ LLVM 最终得在这里把它变成:
   是“工厂函数定义”
 - `RegisterMC...`
   是“把工厂函数注册给 target”
+
+## `TargetInfo` / `TargetMachine` / `TargetDesc` 应该如何实现
+
+这一节到这里, 你已经知道它们分别负责什么了。  
+下面再进一步回答你最关心的事:
+
+- 这三个文件最小应该写成什么样
+- 每一部分代码到底是在补哪一层能力
+
+### 一. `TargetInfo` 的最小实现
+
+通常文件是:
+
+- [ToyTargetInfo.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/TargetInfo/ToyTargetInfo.cpp)
+
+最小骨架一般只有两样东西:
+
+1. 一个全局 `Target` 对象
+2. 一个 `LLVMInitializeToyTargetInfo()` 函数
+
+可以先按下面这个形状理解:
+
+```cpp
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/TargetParser/Triple.h"
+
+using namespace llvm;
+
+Target TheToyTarget;
+
+extern "C" void LLVMInitializeToyTargetInfo() {
+  RegisterTarget<Triple::toy, true> X(TheToyTarget, "toy",
+                                      "Toy backend", "Toy");
+}
+```
+
+这里每一部分在干什么:
+
+- `Target TheToyTarget;`
+  - 创建一个全局 target 对象
+  - 这是后面所有注册的共同核心对象
+
+- `LLVMInitializeToyTargetInfo()`
+  - 这是 LLVM 初始化 target info 层时调用的入口函数
+  - 它不负责创建 `TargetMachine`
+  - 它只负责注册 “这个 target 叫什么、对应哪个架构枚举、绑定到哪个 target 对象”
+
+- `RegisterTarget<Triple::toy, true>`
+  - 把 `Triple::toy`、字符串 `"toy"`、对象 `TheToyTarget` 绑在一起
+
+如果这一层没实现, 最直接的现象通常是:
+
+- `llc --version` 里看不到你的 target
+- `-march=toy` 无法映射到你的 target
+
+### 二. `TargetMachine` 的最小实现
+
+通常文件是:
+
+- [ToyTargetMachine.h](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyTargetMachine.h)
+- [ToyTargetMachine.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyTargetMachine.cpp)
+
+第一次实现时, 你要把它理解成:
+
+- codegen 阶段这个 target 的总入口类
+
+#### 最小类骨架
+
+```cpp
+class ToyTargetMachine : public LLVMTargetMachine {
+  std::unique_ptr<TargetLoweringObjectFile> TLOF;
+  std::unique_ptr<ToySubtarget> Subtarget;
+
+public:
+  ToyTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
+                   StringRef FS, const TargetOptions &Options,
+                   std::optional<Reloc::Model> RM,
+                   std::optional<CodeModel::Model> CM,
+                   CodeGenOptLevel OL, bool JIT);
+
+  const ToySubtarget *getSubtargetImpl(const Function &) const override;
+  TargetLoweringObjectFile *getObjFileLowering() const override;
+  TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
+};
+```
+
+这个类第一次看不用全懂, 先抓三件事:
+
+- 它继承 `LLVMTargetMachine`
+- 它会持有 `Subtarget`
+- 它会持有 `TargetObjectFile`
+
+也就是说, 它不是做某一个具体动作, 而是在把后端运行需要的大块对象组织起来。
+
+#### 最小注册入口
+
+```cpp
+extern Target TheToyTarget;
+
+extern "C" void LLVMInitializeToyTarget() {
+  RegisterTargetMachine<ToyTargetMachine> X(TheToyTarget);
+}
+```
+
+这一步的意义非常明确:
+
+- `TargetInfo` 只解决 “LLVM 知道有这个 target”
+- `LLVMInitializeToyTarget()` 解决 “LLVM 知道要用哪个类实例化这个 target”
+
+也就是说, 它补的是:
+
+- `TheToyTarget -> ToyTargetMachine`
+
+这条连接。
+
+#### 最小构造函数骨架
+
+```cpp
+ToyTargetMachine::ToyTargetMachine(const Target &T, const Triple &TT,
+                                   StringRef CPU, StringRef FS,
+                                   const TargetOptions &Options,
+                                   std::optional<Reloc::Model> RM,
+                                   std::optional<CodeModel::Model> CM,
+                                   CodeGenOptLevel OL, bool JIT)
+    : LLVMTargetMachine(T, "your-datalayout", TT, CPU, FS, Options,
+                        RM.value_or(Reloc::Static),
+                        CM.value_or(CodeModel::Small), OL),
+      TLOF(std::make_unique<ToyTargetObjectFile>()),
+      Subtarget(std::make_unique<ToySubtarget>(TT, CPU, FS, *this)) {
+  initAsmInfo();
+}
+```
+
+第一次读构造函数时, 先只理解它在初始化哪几大块:
+
+- `LLVMTargetMachine(...)`
+  - 把 DataLayout、triple、CPU/feature、重定位模型等基础信息交给基类
+
+- `TLOF(...)`
+  - 创建目标文件布局对象
+
+- `Subtarget(...)`
+  - 创建这个 target 的具体 CPU/feature 能力对象
+
+- `initAsmInfo()`
+  - 初始化汇编相关信息
+  - 这里会很早依赖 `TargetDesc` 注册的 MC 工厂
+
+如果这层没实现或没注册好, 常见现象是:
+
+- `Could not allocate target machine`
+
+### 三. `TargetDesc` 的最小实现
+
+通常文件是:
+
+- [ToyTargetDesc.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/TargetDesc/ToyTargetDesc.cpp)
+
+第一次实现它时, 你要把它理解成:
+
+- MC 层对象工厂的注册中心
+
+它不负责做高层 codegen, 它负责的是:
+
+- 寄存器元信息怎么建
+- 指令元信息怎么建
+- subtarget 元信息怎么建
+- 汇编信息怎么建
+
+#### 最小工厂函数骨架
+
+```cpp
+static MCInstrInfo *createToyMCInstrInfo() {
+  auto *X = new MCInstrInfo();
+  InitToyMCInstrInfo(X);
+  return X;
+}
+
+static MCRegisterInfo *createToyMCRegisterInfo(const Triple &TT) {
+  auto *X = new MCRegisterInfo();
+  InitToyMCRegisterInfo(X, Toy::RA);
+  return X;
+}
+
+static MCSubtargetInfo *createToyMCSubtargetInfo(const Triple &TT,
+                                                 StringRef CPU, StringRef FS) {
+  return createToyMCSubtargetInfoImpl(TT, CPU, CPU, FS);
+}
+
+static MCAsmInfo *createToyMCAsmInfo(const MCRegisterInfo &MRI,
+                                     const Triple &TT,
+                                     const MCTargetOptions &Options) {
+  return new MCAsmInfo();
+}
+```
+
+这几类函数分别在回答:
+
+- `createToyMCInstrInfo`
+  - “如果 LLVM 需要本 target 的指令元信息, 应该怎么 new 出来?”
+
+- `createToyMCRegisterInfo`
+  - “如果 LLVM 需要本 target 的寄存器元信息, 应该怎么 new 出来?”
+
+- `createToyMCSubtargetInfo`
+  - “如果 LLVM 需要本 target 的 subtarget 元信息, 应该怎么建?”
+
+- `createToyMCAsmInfo`
+  - “如果 LLVM 需要汇编层基本信息, 应该怎么建?”
+
+这些函数本身不是在“立刻创建全局对象”, 而是在提供创建方法。
+
+#### 最小注册入口
+
+```cpp
+extern Target TheToyTarget;
+
+extern "C" void LLVMInitializeToyTargetMC() {
+  TargetRegistry::RegisterMCRegInfo(TheToyTarget, createToyMCRegisterInfo);
+  TargetRegistry::RegisterMCInstrInfo(TheToyTarget, createToyMCInstrInfo);
+  TargetRegistry::RegisterMCSubtargetInfo(TheToyTarget,
+                                          createToyMCSubtargetInfo);
+  TargetRegistry::RegisterMCAsmInfo(TheToyTarget, createToyMCAsmInfo);
+}
+```
+
+这一段最核心的作用是:
+
+- 把前面那些 `createToyMC...` 工厂函数挂到 `TheToyTarget`
+
+所以你可以把 `TargetDesc` 文件拆成两半来记:
+
+- 前半段:
+  - 定义工厂函数
+- 后半段:
+  - 把工厂注册给 target
+
+如果这层没实现, 常见现象是:
+
+- `Unable to create reg info`
+- `MCInstrInfo` / `MCAsmInfo` 缺失
+- `TargetMachine` 刚初始化就失败
+
+## 这三层是怎么串起来的
+
+把这三层连成一条线, 你会更不容易混淆:
+
+1. `Triple`
+   - 把命令行字符串解析成内部架构枚举
+
+2. `TargetInfo`
+   - 把架构枚举、target 名字、`TheToyTarget` 绑定起来
+
+3. `TargetMachine`
+   - 告诉 LLVM: 这个 `TheToyTarget` 应该实例化成 `ToyTargetMachine`
+
+4. `TargetDesc`
+   - 告诉 LLVM: `ToyTargetMachine` 初始化所需的 MC 对象该怎么创建
+
+也就是说, 第一节最核心的链条是:
+
+- 名字
+- 架构枚举
+- target 对象
+- target machine
+- MC 工厂
+
+## 第一阶段你应该做到什么程度
+
+第一阶段不要追求功能完整, 只要做到下面这些就已经是成功:
+
+- `ToyTargetInfo.cpp`
+  - 有 `TheToyTarget`
+  - 有 `LLVMInitializeToyTargetInfo`
+
+- `ToyTargetMachine.h/.cpp`
+  - 有 `ToyTargetMachine` 类
+  - 有 `LLVMInitializeToyTarget`
+  - 构造函数能正常走到 `initAsmInfo()`
+
+- `ToyTargetDesc.cpp`
+  - 有最小的 `MCInstrInfo` / `MCRegisterInfo` / `MCSubtargetInfo` / `MCAsmInfo`
+  - 有 `LLVMInitializeToyTargetMC`
+
+这时你的目标不是 “已经能编 C 程序”, 而是:
+
+- `llc --version` 能看到 target
+- `llc -march=toy` 不再是 unknown target
+- `llc` 开始报更靠后的错误
+
+这其实说明你已经把第一节该搭的骨架搭起来了。
+
+## 第一节真正动手时的顺序
+
+到这里, 你已经知道“要改哪些文件”和“这些文件大概在干什么”。  
+下面这部分更偏操作手册:
+
+- 先改哪个文件
+- 再改哪个函数
+- 每改完一步, 应该期待什么现象
+
+如果你第一次自己搭后端, 强烈建议按这个顺序来, 不要跳着改。
+
+### 第 1 步: 先把 target 接进构建系统
+
+先看:
+
+- `llvm/CMakeLists.txt`
+- `llvm/lib/Target/Toy/CMakeLists.txt`
+- `llvm/lib/Target/Toy/TargetInfo/CMakeLists.txt`
+- `llvm/lib/Target/Toy/TargetDesc/CMakeLists.txt`
+
+你这一步通常要做的事是:
+
+1. 在顶层 target 列表里把 `Toy` 加进去
+2. 新建 `Toy` target 目录自己的 `CMakeLists.txt`
+3. 让 `Toy` 目录包含 `TargetInfo` 和 `TargetDesc` 子目录
+4. 给 `TargetInfo` 和 `TargetDesc` 各建一个最小库
+
+这一步的目标不是运行 `llc`, 而是:
+
+- 确保你的 target 目录会被编译系统看见
+
+如果这一步没做, 后面所有 C++ 文件即使写了也可能根本没参与构建。
+
+### 第 2 步: 在 `Triple.h` 里加架构枚举
+
+先看:
+
+- [llvm/include/llvm/TargetParser/Triple.h](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/llvm/include/llvm/TargetParser/Triple.h)
+
+你通常要改的是:
+
+- `enum ArchType`
+
+例如加:
+
+- `toy`
+- 或者 `toyriscv32` / `toyriscv64`
+
+这一步的作用是:
+
+- 给 LLVM 增加一个新的“内部架构编号”
+
+此时你还没有让字符串名生效, 只是先把内部枚举准备好。
+
+### 第 3 步: 在 `Triple.cpp` 里把名字和枚举接起来
+
+先看:
+
+- [llvm/lib/TargetParser/Triple.cpp](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/llvm/lib/TargetParser/Triple.cpp)
+
+这一阶段建议至少按下面顺序改:
+
+1. `Triple::getArchTypeName`
+2. `Triple::getArchTypeForLLVMName`
+3. `Triple::getArchTypePrefix`
+4. `Triple::getArchPointerBitWidth`
+
+如果是双变体架构, 再继续改:
+
+5. `Triple::get64BitArchVariant`
+6. `Triple::isLittleEndian`
+
+这一步每个函数的操作目标可以再压缩成一句话:
+
+- `getArchTypeName`
+  - 让内部枚举能重新变回字符串名字
+- `getArchTypeForLLVMName`
+  - 让字符串名字能解析成内部枚举
+- `getArchTypePrefix`
+  - 让 LLVM 知道这个架构属于哪个家族前缀
+- `getArchPointerBitWidth`
+  - 让 LLVM 知道它是 32 位还是 64 位
+- `get64BitArchVariant`
+  - 让 LLVM 知道 32 位变体如何切到 64 位
+- `isLittleEndian`
+  - 让 LLVM 知道默认端序
+
+这一阶段完成后, 你等于把 “字符串 target 名字” 和 “内部架构语义” 接起来了。
+
+### 第 4 步: 实现 `ToyTargetInfo.cpp`
+
+先看:
+
+- [ToyTargetInfo.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/TargetInfo/ToyTargetInfo.cpp)
+
+你要创建的最小内容是:
+
+1. `Target TheToyTarget;`
+2. `LLVMInitializeToyTargetInfo()`
+3. 里面的 `RegisterTarget<...>`
+
+这一阶段的作用是:
+
+- 把 target 名字真正注册到 LLVM target 列表里
+
+如果你前面的 `Triple` 已经接好了, 而这一步也接好了, 你应该期待的第一个明显变化是:
+
+- `llc --version` 的 `Registered Targets` 里开始出现你的 target
+
+这是第一节里最关键的第一个“看得见的成功信号”。
+
+### 第 5 步: 实现 `ToyTargetMachine.h/.cpp`
+
+先看:
+
+- [ToyTargetMachine.h](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyTargetMachine.h)
+- [ToyTargetMachine.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyTargetMachine.cpp)
+
+第一轮只做最小骨架:
+
+1. 声明 `class ToyTargetMachine : public LLVMTargetMachine`
+2. 实现 `LLVMInitializeToyTarget()`
+3. 写最小构造函数
+4. 提供最基本的 `getSubtargetImpl` / `getObjFileLowering` / `createPassConfig`
+
+这一阶段的作用是:
+
+- 告诉 LLVM: 如果用户真的选了这个 target, 应该创建哪个 codegen 总入口对象
+
+做到这一步之后, 你最常见的现象是:
+
+- `llc` 已经不再停留在 “unknown target”
+- 而是进入 “尝试创建 target machine”
+
+如果 MC 层还没接, 常见下一阶段报错就是:
+
+- `Could not allocate target machine`
+- 或初始化过程中很快因为缺少 reg info / asm info 失败
+
+### 第 6 步: 实现 `ToyTargetDesc.cpp`
+
+先看:
+
+- [ToyTargetDesc.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/TargetDesc/ToyTargetDesc.cpp)
+
+第一轮你最少补这几类内容:
+
+1. `createToyMCRegisterInfo`
+2. `createToyMCInstrInfo`
+3. `createToyMCSubtargetInfo`
+4. `createToyMCAsmInfo`
+5. `LLVMInitializeToyTargetMC()`
+
+这一阶段的作用是:
+
+- 给 `TargetMachine` 初始化要用到的 MC 层依赖提供工厂
+
+做到这一步后, 你应该期待:
+
+- `TargetMachine` 不再一创建就立刻因为缺 MC 对象而失败
+- `llc` 能往更后面的 codegen 流程继续走
+
+这时候即使后面还会报:
+
+- 缺少 `Subtarget`
+- 缺少 `ISelLowering`
+- 缺少 `FrameLowering`
+
+也不要紧, 这说明你已经成功走出第一节了。
+
+## 每一步改完后, 你应该检查什么
+
+第一次搭后端时, 最好不要一口气改完所有文件再看结果。  
+更好的方法是每完成一小步就看一次现象。
+
+### 检查点 1: 构建系统接好了没有
+
+你可以检查:
+
+- CMake / Ninja 是否开始看到 `Toy` 相关目标
+- target 目录下的源码是否参与编译
+
+如果这里没通, 后面代码层再对也没有意义。
+
+### 检查点 2: `Triple` 接好了没有
+
+你可以关注:
+
+- 编译 `Triple.cpp` 时是否出现你新增枚举相关错误
+- `-march=toy` 是否还被当成完全未知字符串
+
+### 检查点 3: `TargetInfo` 接好了没有
+
+最直接检查:
+
+- `llc --version` 里有没有你的 target 名字
+
+如果还没有, 重点回看:
+
+- `Target TheToyTarget`
+- `LLVMInitializeToyTargetInfo`
+- `RegisterTarget<...>`
+
+### 检查点 4: `TargetMachine` 接好了没有
+
+如果 target 名字已经出现, 但 `llc -march=toy` 继续报:
+
+- `Could not allocate target machine`
+
+那就重点回看:
+
+- `LLVMInitializeToyTarget`
+- `RegisterTargetMachine<ToyTargetMachine>`
+- `ToyTargetMachine` 类本身是否真的存在并可构造
+
+### 检查点 5: `TargetDesc` 接好了没有
+
+如果 `TargetMachine` 已经开始创建, 但很快出现:
+
+- `Unable to create reg info`
+- `Unable to create asm info`
+- `MCInstrInfo` 相关缺失
+
+那就重点回看:
+
+- `LLVMInitializeToyTargetMC`
+- 那几类 `createToyMC...` 工厂函数
+
+## 第一节最常见的三个误区
+
+### 误区 1: 一上来就去写 `Subtarget`
+
+这会让你很容易在还没把 target 注册链接通时, 就提前掉进后面的实现细节里。
+
+第一节的目标不是:
+
+- 做完整 codegen
+
+而是:
+
+- 让 LLVM 认出并接入这个 target
+
+### 误区 2: 只改 `Triple.h`, 不改 `Triple.cpp`
+
+这会导致一种很典型的半通状态:
+
+- 代码里有了枚举
+- 但字符串解析和回写逻辑没接上
+
+结果就是你以为“架构已经加了”, 实际上命令行和 triple 逻辑仍然接不上。
+
+### 误区 3: target 名字前后不一致
+
+例如:
+
+- triple 用 `toy`
+- target 对象叫别的
+- CMake 组件名又是另一套
+
+这种问题不一定第一时间报特别清晰的错, 但会让你很难沿着 LLVM 现有 target 的结构去对照理解。
 
 ### 必须先有的 TableGen 产物
 
