@@ -6,6 +6,115 @@
 - 理解教程中 `toy-4` 到 `toy-10` 的推进顺序
 - 分清 “先占位” 和 “开始真正出码” 的边界
 
+## 这一节怎么读
+
+第一节解决的是:
+
+- `llc` 认出 target
+- LLVM 能开始尝试创建 target machine
+
+第二节解决的是:
+
+- target machine 创建后, LLVM 还缺哪些“骨架对象”才能继续往下走
+
+所以这一节更适合按“我现在想让 `llc` 多走一步”来读, 而不是按文件树顺序硬看。
+
+## 目标 -> 需要实现什么函数
+
+### 目标 1: `llc -mtriple=...` 不再只停在 target 注册阶段
+
+你至少要保证这些存在:
+
+- `class MiniRiscvTargetMachine : public LLVMTargetMachine`
+- `LLVMInitializeMiniRiscvTarget()`
+- `RegisterTargetMachine<MiniRiscvTargetMachine>`
+- `MiniRiscvTargetMachine` 构造函数
+
+这一目标的本质是:
+
+- 让 LLVM 不只是“认得这个 target”
+- 而是真的有一个 codegen 总入口类可以创建
+
+### 目标 2: `TargetMachine` 能返回一个 `Subtarget`
+
+你至少要保证这些存在:
+
+- `class MiniRiscvSubtarget`
+- `MiniRiscvTargetMachine::getSubtargetImpl`
+- `MiniRiscvSubtarget` 构造函数
+
+这一目标的本质是:
+
+- 让后续 pass 有地方查询目标能力
+
+如果这一步没做, 后面很多 pass 会不知道该向谁要:
+
+- `InstrInfo`
+- `RegisterInfo`
+- `FrameLowering`
+- `TargetLowering`
+
+### 目标 3: `Subtarget` 能提供最小 codegen 能力对象
+
+你至少要保证这些存在:
+
+- `MiniRiscvSubtarget::getInstrInfo`
+- `MiniRiscvSubtarget::getRegisterInfo`
+- `MiniRiscvSubtarget::getFrameLowering`
+- `MiniRiscvSubtarget::getTargetLowering`
+
+这一目标的本质是:
+
+- 让 LLVM 的 codegen pass 有统一入口去拿目标相关策略对象
+
+### 目标 4: LLVM 能进入 SelectionDAG 指令选择骨架
+
+你至少要保证这些存在:
+
+- `class MiniRiscvDAGToDAGISel`
+- `MiniRiscvTargetMachine::createPassConfig`
+- `TargetPassConfig::addInstSelector` 的覆写
+
+这一目标的本质是:
+
+- 让 pass pipeline 真正把目标专属的 isel pass 插进去
+
+### 目标 5: LLVM 有最小 lowering 骨架
+
+你至少要保证这些存在:
+
+- `class MiniRiscvTargetLowering`
+- `MiniRiscvSubtarget` 中持有它
+- `MiniRiscvSubtarget::getTargetLowering`
+
+这一目标的本质是:
+
+- 让 LLVM IR / DAG 层的 target-specific 语义有承接对象
+
+### 目标 6: LLVM 有最小栈帧骨架
+
+你至少要保证这些存在:
+
+- `class MiniRiscvFrameLowering`
+- `MiniRiscvSubtarget` 中持有它
+- `MiniRiscvSubtarget::getFrameLowering`
+
+这一目标的本质是:
+
+- 让函数 prologue / epilogue 和栈帧约定有承接对象
+
+### 目标 7: LLVM 后面能开始尝试走到汇编输出链路
+
+你至少要保证这些存在:
+
+- `class MiniRiscvAsmPrinter`
+- `class MiniRiscvInstPrinter`
+- `LLVMInitializeMiniRiscvTargetMC()` 已经注册对应 MC 能力
+
+这一目标的本质是:
+
+- 让机器指令后面有机会继续走向 `MCInst` 和 asm 文本
+
 ## 对应 toy 章节
 
 - `toy-4: ToyDAGToDAGISel`
@@ -33,6 +142,31 @@
 - [TargetDesc/ToyInstPrinter.h](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/TargetDesc/ToyInstPrinter.h)
 - [TargetDesc/ToyInstPrinter.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/TargetDesc/ToyInstPrinter.cpp)
 
+## 如果你现在是在做 `MINIRISCV`, 第二节最值得优先补什么
+
+结合你当前仓库状态, 第二节最适合优先落地的是下面这个顺序:
+
+1. `MiniRiscvTargetMachine`
+2. `MiniRiscvSubtarget`
+3. `MiniRiscvTargetLowering`
+4. `MiniRiscvFrameLowering`
+5. `MiniRiscvDAGToDAGISel`
+
+先不要同时展开:
+
+- `AsmPrinter`
+- `InstPrinter`
+- 真正的指令 pattern
+- 完整寄存器系统
+
+因为第二节的目标还是:
+
+- 把 codegen 骨架站起来
+
+而不是:
+
+- 立刻能出很多正确指令
+
 ## 这几个模块各自负责什么
 
 在读这些类之前, 你可以先记一个总原则:
@@ -41,6 +175,39 @@
 - 而是因为 LLVM 的 codegen pipeline 需要它们先占住位置
 
 也就是说, 这一节的重点是 “让骨架站起来”, 不是 “每个模块都做完”
+
+## 第二节里你第一次最容易遇到的几个现象
+
+### 现象 1: target 已识别, 但 `TargetMachine` 很空
+
+这通常意味着你还缺:
+
+- 真正的 `MiniRiscvTargetMachine` 类内容
+- `createPassConfig`
+- `getSubtargetImpl`
+
+### 现象 2: 已经有 `TargetMachine`, 但后面的 pass 找不到目标能力对象
+
+这通常意味着你还缺:
+
+- `MiniRiscvSubtarget`
+- `Subtarget` 里持有的 `InstrInfo/RegisterInfo/FrameLowering/TargetLowering`
+
+### 现象 3: pipeline 里没有你的 isel pass
+
+这通常意味着你还缺:
+
+- `MiniRiscvDAGToDAGISel`
+- `TargetPassConfig::addInstSelector`
+
+### 现象 4: 你觉得“我还没实现指令, 为什么先要这些类”
+
+这是第二节最核心的心态转换:
+
+- LLVM 先要一套目标能力对象
+- 然后才会在这些对象里继续要求更具体的行为
+
+所以这里很多类的第一版都只是“占位骨架”。
 
 ### `ToyDAGToDAGISel`
 
@@ -57,6 +224,14 @@
 
 - `TargetLowering` 更像 “先把问题翻译成 target 能懂的话”
 - `DAGToDAGISel` 更像 “再把这些 DAG 节点选成具体指令”
+
+如果换成你当前自己的 target 名字, 第二节你最终想补到的就是:
+
+- `MiniRiscvDAGToDAGISel`
+
+它在最初阶段甚至可以几乎不做复杂逻辑, 但它必须存在, 因为:
+
+- `TargetPassConfig` 需要把它插进 pass pipeline
 
 ### `ToyInstPrinter`
 
@@ -136,6 +311,15 @@ LLVM 的很多 pass 都是先拿 `Subtarget`, 再从里面取这些对象。
 - 构造函数里初始化了哪些能力
 - `TargetMachine` 是怎么把它暴露给别的 pass 的
 
+如果你现在要在自己的后端里实现这一层, 最小关注点就是:
+
+- `MiniRiscvSubtarget` 里有没有持有:
+  - `InstrInfo`
+  - `RegisterInfo`
+  - `FrameLowering`
+  - `TargetLowering`
+- `MiniRiscvTargetMachine::getSubtargetImpl` 能不能返回它
+
 ### `ToyTargetLowering`
 
 负责 target-specific lowering。
@@ -155,6 +339,11 @@ LLVM 的很多 pass 都是先拿 `Subtarget`, 再从里面取这些对象。
 
 这些都需要 target 来给出答案。
 
+第二节里第一版 `TargetLowering` 不要求你马上把 call/return 都做好。  
+但这个类需要先存在, 因为 LLVM 很快就会问:
+
+- 这个 target 的基本 lowering 对象在哪里?
+
 ### `ToyFrameLowering`
 
 负责 prologue / epilogue 和栈帧约定。
@@ -167,6 +356,10 @@ LLVM 的很多 pass 都是先拿 `Subtarget`, 再从里面取这些对象。
 - 函数要返回时, 谁来决定 `sp` 怎么恢复?
 
 答案通常就是 `FrameLowering`。
+
+第二节里它最早的价值不一定是“功能完整”, 而是:
+
+- 让 `Subtarget` 能把一个 frame lowering 对象交给 LLVM
 
 ## 为什么教程按这个顺序推进
 
@@ -207,6 +400,46 @@ LLVM 的很多 pass 都是先拿 `Subtarget`, 再从里面取这些对象。
 - `MCInst`
 - `InstPrinter`
 - asm
+
+如果你现在还没到 `AsmPrinter`, 也完全正常。  
+对你当前阶段更关键的其实是上面这两条:
+
+- `TargetMachine -> Subtarget`
+- `Subtarget -> Lowering/Frame/Reg/Instr`
+
+因为这两条才是第二节真正的骨架核心。
+
+## 第二节最推荐的实际推进顺序
+
+如果你现在已经能跑出:
+
+- `./build/bin/llc --version`
+
+那么第二节最稳的推进顺序通常是:
+
+1. 先把 `MiniRiscvTargetMachine` 补成像样的最小骨架
+2. 再实现 `MiniRiscvSubtarget`
+3. 再让 `Subtarget` 能返回最小 `TargetLowering`
+4. 再让 `Subtarget` 能返回最小 `FrameLowering`
+5. 最后把 `MiniRiscvDAGToDAGISel` 接进 `createPassConfig`
+
+这个顺序的好处是:
+
+- 每一步都只多补一层能力
+- 你更容易把下一个报错和缺失对象对应起来
+
+## 第二节完成后的理想状态
+
+第二节完成不等于:
+
+- 已经能正确输出汇编
+
+第二节完成更合理的判断标准是:
+
+- `TargetMachine` 已经不像空壳
+- `Subtarget` 已经存在并能返回目标能力对象
+- isel pass 已经有地方挂进去
+- LLVM 能继续往后走, 然后再暴露更具体的“缺哪些指令/哪些 lowering”问题
 
 这条链你最好反复记。因为从这一节开始, 很多“我明明已经有指令了, 为什么还没出汇编”的困惑, 都是在这里解开的。
 

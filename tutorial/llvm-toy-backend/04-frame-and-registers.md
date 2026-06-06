@@ -6,6 +6,105 @@
 - 理解 `storeRegToStackSlot` 和 `eliminateFrameIndex` 分别解决什么问题
 - 理解 PEI 在后端流程里的位置
 
+## 这一节按什么目标来学
+
+这一节不要只看成“栈帧实现细节”。  
+更适合的读法是:
+
+- 我现在想让 LLVM 的栈访问和寄存器保存往前走一步
+- 为了做到这件事, 我要补哪些函数
+
+## 目标 -> 需要实现什么函数
+
+### 目标 1: LLVM 能知道哪些寄存器不能乱分配
+
+优先实现:
+
+- `getReservedRegs`
+
+你在实现的是:
+
+- “寄存器分配器有哪些寄存器不能碰”
+
+常见对象:
+
+- `sp`
+- `fp`
+- `zero`
+
+### 目标 2: LLVM 能知道函数用了哪些 callee-saved registers 要保存
+
+优先实现:
+
+- `getCalleeSavedRegs`
+- `getCallPreservedMask`
+
+你在实现的是:
+
+- “哪些寄存器是被调用者负责保留的”
+
+这一步不通时, 后面保存/恢复寄存器的逻辑会很混乱。
+
+### 目标 3: LLVM 能决定栈访问默认相对哪个寄存器
+
+优先实现:
+
+- `getFrameRegister`
+
+你在实现的是:
+
+- “栈槽地址最后是相对 `sp` 还是 `fp` 来算”
+
+### 目标 4: LLVM 能把寄存器保存到栈上
+
+优先实现:
+
+- `storeRegToStackSlot`
+
+你在实现的是:
+
+- “如果要 spill 一个寄存器, 这个 target 到底该发哪条 store 指令”
+
+如果这一步没做, 常见现象就是:
+
+- PEI 想保存寄存器时直接失败
+
+### 目标 5: LLVM 能把寄存器从栈上恢复回来
+
+优先实现:
+
+- `loadRegFromStackSlot`
+
+你在实现的是:
+
+- “如果要 reload 一个寄存器, 这个 target 到底该发哪条 load 指令”
+
+### 目标 6: LLVM 能把抽象 `FrameIndex` 变成真实地址
+
+优先实现:
+
+- `eliminateFrameIndex`
+
+你在实现的是:
+
+- “把编译器中间阶段的抽象栈槽编号, 改写成真实寄存器加偏移”
+
+如果这一步没做, 后面就算前面 pass 都过了, 到真正输出机器指令时也会卡住。
+
+### 目标 7: LLVM 能在函数入口和出口真正调整栈
+
+优先实现:
+
+- `emitPrologue`
+- `emitEpilogue`
+
+你在实现的是:
+
+- “函数一进来怎么改 `sp`”
+- “函数返回前怎么把 `sp` 恢复”
+
+这一步本质上是在让栈帧真正落地。
+
 ## 对应 toy 章节
 
 - `toy-10: ToyFrameLowering`
@@ -24,6 +123,35 @@
 - [ToyInstrInfo.h](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyInstrInfo.h)
 - [ToyInstrInfo.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyInstrInfo.cpp)
 - [ToyCallingConv.td](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyCallingConv.td)
+
+## 如果你只关心“某个现象还没通, 应该先看哪里”
+
+### 现象: 栈相关 pass 一走到保存寄存器就失败
+
+优先看:
+
+- `storeRegToStackSlot`
+- `getCalleeSavedRegs`
+
+### 现象: 栈相关指令里还残留 `FrameIndex`
+
+优先看:
+
+- `eliminateFrameIndex`
+- `getFrameRegister`
+
+### 现象: 函数没有正确分配/回收栈空间
+
+优先看:
+
+- `emitPrologue`
+- `emitEpilogue`
+
+### 现象: 某些寄存器明明不该被分配却被拿去用了
+
+优先看:
+
+- `getReservedRegs`
 
 ## 先认识这三个类为什么会同时出现
 
@@ -204,6 +332,19 @@ PEI 想 spill CSR 时会直接失败。
 - 一碰到 `alloca` 后的带偏移访问或者聚合类型字段访问就错了
 
 原因往往不是大逻辑错了, 而是你只处理了 “`FI` 本身”, 没把附带偏移一起算进去。
+
+## 这一节完成后的阶段目标
+
+这一节完成不等于:
+
+- 你的后端已经能正确出所有函数
+
+更合理的完成标准是:
+
+- LLVM 已经知道哪些寄存器要保留
+- 能为栈访问选出真实基寄存器
+- 能把 `FrameIndex` 改写成真实地址
+- 能在函数入口出口插入最小栈调整代码
 
 ## 注意事项
 

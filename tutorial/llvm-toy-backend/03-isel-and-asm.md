@@ -120,7 +120,7 @@
 - `emitInstruction` 已经被调用了
 - 但输出的 asm 还是不对
 
-那通常就该看 `InstPrinter` 了。  
+那通常就该看 `InstPrinter` 了。
 如果连 `emitInstruction` 都没走到, 问题往往还在更前面的 codegen 或 `AsmPrinter`。
 
 ## 这一阶段最重要的知识点
@@ -149,8 +149,7 @@
 - 更接近汇编/编码层
 - 后续可以打印成 asm, 也可以编码成 binary
 
-`MCInst` 更像 “汇编器能看懂的统一指令容器”。  
-它不关心前面那些 codegen 期的复杂语义, 更关心:
+`MCInst` 更像 “汇编器能看懂的统一指令容器”。它不关心前面那些 codegen 期的复杂语义, 更关心:
 
 - opcode 是什么
 - 操作数是什么
@@ -163,12 +162,12 @@
 
 这一点也很值得建立直觉:
 
-- `MachineOperand`
-  面向 codegen, 信息更丰富
+-
+- 面向 codegen, 信息更丰富
 - `MCOperand`
   面向 MC 层, 结构更简单
 
-所以像 [ToyMCInstLower.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyMCInstLower.cpp) 这样的文件才会存在。  
+所以像 [ToyMCInstLower.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyMCInstLower.cpp) 这样的文件才会存在。
 它的职责就是把复杂一点的 codegen 操作数转换成 MC 能接受的形式。
 
 ## 注意事项

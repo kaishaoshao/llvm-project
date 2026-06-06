@@ -6,6 +6,63 @@
 - 能区分 “后端核心闭环” 和 “能力扩展”
 - 为后续深入软浮点、硬浮点、intrinsic、object file 做导航
 
+## 这一节按什么目标来学
+
+这一节不是“下一步立刻都要做”的清单。  
+它更像是:
+
+- 当最小后端已经能走通以后
+- 你接下来常见的扩展目标各自需要补什么
+
+## 目标 -> 常见要补哪些函数或模块
+
+### 目标 1: 支持全局地址和更复杂寻址
+
+常见要补:
+
+- `LowerGlobalAddress`
+- `AsmPrinter` / `MCInstLower` 里相关 operand lowering
+- `MCExpr` / relocation 相关表达
+
+### 目标 2: 支持条件比较和条件跳转
+
+常见要补:
+
+- `setcc`
+- `br_cc`
+- 对应的 pattern 或 custom lowering
+
+### 目标 3: 支持更小整数类型而不为每种类型都手写指令
+
+常见要补:
+
+- type legalization / promotion 相关逻辑
+- load/store pattern
+
+### 目标 4: 支持软浮点或硬浮点
+
+常见要补:
+
+- 浮点寄存器类
+- 浮点指令 pattern
+- `TargetLowering` 中浮点相关合法化路径
+
+### 目标 5: 支持 builtin / intrinsic
+
+常见要补:
+
+- 前端 builtin 到 IR intrinsic 的映射认知
+- target-specific pattern 或 lowering hook
+
+### 目标 6: 支持真正的目标文件输出
+
+常见要补:
+
+- `MCCodeEmitter`
+- `AsmBackend`
+- fixup / relocation
+- object writer
+
 ## 对应 toy 章节
 
 - `toy-20` 到 `toy-23`
@@ -106,6 +163,33 @@
 4. floating point
 5. object file
 
+## 如果你只关心“下一步扩展目标是什么”
+
+### 想先把普通 C 函数跑稳
+
+优先顺序:
+
+1. global address
+2. `setcc` / `br_cc`
+3. 更完整的调用约定
+
+### 想支持浮点
+
+优先顺序:
+
+1. 先分清 soft float 还是 hard float
+2. 再补寄存器类和 pattern
+3. 最后补 constant pool / truncstore 等细节
+
+### 想支持 `.o` 输出和链接
+
+优先顺序:
+
+1. `MCCodeEmitter`
+2. `AsmBackend`
+3. fixup / relocation
+4. object writer
+
 ## 注意事项
 
 - object file 是 MC 层知识最密集的部分, 不要过早进入
@@ -117,4 +201,3 @@
 1. 为什么 hard float 不只是 “加几个 FPR 和浮点指令”?
 2. 为什么 object file 相关内容适合最后学?
 3. `setcc` / `br_cc` 为什么经常体现 ISA 与 LLVM 中间语义的差异?
-

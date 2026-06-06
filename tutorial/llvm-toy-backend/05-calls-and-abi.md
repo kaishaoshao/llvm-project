@@ -6,6 +6,71 @@
 - 看懂 `LowerFormalArguments`、`LowerCall`、`LowerReturn`
 - 理解 `glue` 为何是调用和返回相关代码里非常关键的一部分
 
+## 这一节按什么目标来学
+
+这一节最容易失焦, 因为 call/return 会同时碰到:
+
+- 参数传递
+- 返回值
+- 隐式寄存器
+- 栈参数
+- 调度顺序
+
+更好的学法是按目标拆开。
+
+## 目标 -> 需要实现什么函数
+
+### 目标 1: 被调用函数能接住参数
+
+优先实现:
+
+- `LowerFormalArguments`
+
+你在实现的是:
+
+- “参数到达 callee 时, 怎么从参数寄存器或栈槽变成函数体里可用的值”
+
+### 目标 2: 调用者能把参数送出去
+
+优先实现:
+
+- `LowerCall`
+
+你在实现的是:
+
+- “调用发生前, 参数怎么放进约定好的寄存器或栈位置”
+
+### 目标 3: 被调用函数能按约定返回结果
+
+优先实现:
+
+- `LowerReturn`
+
+你在实现的是:
+
+- “返回值怎么放到约定的位置, 以及最后怎么发出 return”
+
+### 目标 4: 参数分配规则不再全手写
+
+优先补齐:
+
+- `ToyCallingConv.td` 或你自己的 `CallingConv.td`
+
+你在实现的是:
+
+- “参数/返回值放寄存器还是落栈的规则手册”
+
+### 目标 5: 调用相关指令不会被错误重排
+
+优先理解和实现:
+
+- `glue`
+- `Chain` / `Glue` 相关节点连接
+
+你在实现的是:
+
+- “让隐式使用物理寄存器的调用序列保持正确顺序”
+
 ## 对应 toy 章节
 
 - `toy-24: LowerReturn`
@@ -22,6 +87,36 @@
 - [ToyInstrInfo.td](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyInstrInfo.td)
 - [ToyFrameLowering.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyFrameLowering.cpp)
 - [ToyRegisterInfo.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/ToyRegisterInfo.cpp)
+
+## 如果你只关心“某个现象没通, 应该先看哪里”
+
+### 现象: 函数进来以后参数全是错的
+
+优先看:
+
+- `LowerFormalArguments`
+- `CallingConv.td`
+
+### 现象: 调用出去时参数没放对位置
+
+优先看:
+
+- `LowerCall`
+- `CallingConv.td`
+
+### 现象: 返回值不对或 return 路径炸掉
+
+优先看:
+
+- `LowerReturn`
+
+### 现象: 调用前后某些寄存器值神秘坏掉
+
+优先看:
+
+- `glue`
+- 调用序列里隐式寄存器依赖
+- `getCallPreservedMask`
 
 ## 先把 ABI 和调用约定说清楚
 
@@ -185,6 +280,18 @@
   最容易看懂寄存器和栈是怎么混合使用的
 
 这样你再去看 `LowerCall` / `LowerFormalArguments`, 每段代码都更有落点。
+
+## 这一节完成后的阶段目标
+
+这一节完成不等于:
+
+- ABI 已经完整无缺
+
+更合理的完成标准是:
+
+- 简单整数参数可以进出函数
+- 最小函数调用可以正确传参和取回返回值
+- 调用序列不会因为隐式寄存器依赖而被错误打乱
 
 ## 注意事项
 

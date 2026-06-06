@@ -6,6 +6,82 @@
 - 建立常见术语和职责的对应关系
 - 在当前仓库和旧教程之间做路径对照
 
+## 这个文件怎么用
+
+前面几节更像“教学正文”, 这一节更像“查表页”。  
+最适合的用法不是从头读到尾, 而是:
+
+- 你先知道自己现在的目标是什么
+- 再来这里查“对应应该看哪些文件”
+
+## 按目标查文件
+
+### 想实现 `llc --version` 里出现 target
+
+优先看:
+
+- `TargetInfo/ToyTargetInfo.cpp`
+- `llvm/CMakeLists.txt`
+- `Triple.h`
+- `Triple.cpp`
+
+### 想实现 `llc -mtriple=...` 不再报 unknown target
+
+优先看:
+
+- `Triple.h`
+- `Triple.cpp`
+- `TargetInfo/ToyTargetInfo.cpp`
+
+### 想实现 `TargetMachine` 创建
+
+优先看:
+
+- `ToyTargetMachine.h`
+- `ToyTargetMachine.cpp`
+
+### 想实现 MC 基础对象创建
+
+优先看:
+
+- `TargetDesc/ToyTargetDesc.cpp`
+- `Toy.td`
+- `ToyRegisterInfo.td`
+- `ToyInstrInfo.td`
+
+### 想实现最小 isel 骨架
+
+优先看:
+
+- `ToyISelLowering.h/.cpp`
+- `ToyDAGToDAGISel.h/.cpp`
+- `ToyInstrInfo.td`
+
+### 想实现栈帧和寄存器保存
+
+优先看:
+
+- `ToyFrameLowering.h/.cpp`
+- `ToyRegisterInfo.h/.cpp`
+- `ToyInstrInfo.h/.cpp`
+
+### 想实现函数调用和返回
+
+优先看:
+
+- `ToyISelLowering.h/.cpp`
+- `ToyCallingConv.td`
+- `ToyFrameLowering.cpp`
+- `ToyRegisterInfo.cpp`
+
+### 想实现 `MachineInstr -> MCInst -> asm`
+
+优先看:
+
+- `ToyAsmPrinter.h/.cpp`
+- `ToyMCInstLower.h/.cpp`
+- `TargetDesc/ToyInstPrinter.h/.cpp`
+
 ## `llvm-toy` 文件地图
 
 ### 顶层 target 目录
@@ -130,4 +206,3 @@ Prologue/Epilogue Insertion。负责栈帧最终落地。
 - 学职责时优先看本文件和前面 6 节教程
 - 查实现时按 “文件地图” 直接跳转
 - 遇到接口差异时, 先回到职责层面, 再对照你当前 LLVM 版本 API
-

@@ -6,6 +6,104 @@
 - 理解 `TheToyTarget` 是什么
 - 理解 `LLVMInitializeToyTargetInfo` / `LLVMInitializeToyTarget` / `LLVMInitializeToyTargetMC` 三者的分工
 
+## 这一节最重要的新用法
+
+这一节你可以不要按“文件顺序”读, 而是按“目标顺序”读。  
+也就是:
+
+- 先看你现在想让 `llc` 做到什么
+- 再反推必须实现哪些函数
+
+下面这张表就是给第一次动手的人用的。
+
+## 目标 -> 需要实现什么函数
+
+### 目标 1: `llc --version` 里出现你的 target
+
+你至少要保证这些东西存在:
+
+- `Triple::ArchType` 里有你的架构枚举
+- `Triple::getArchTypeForLLVMName`
+- `Target TheToyTarget;`
+- `LLVMInitializeToyTargetInfo()`
+- `RegisterTarget<...>`
+
+这一目标的本质是:
+
+- 让 LLVM 认识 “有这么一个 target”
+
+如果这一步没做完, 最常见现象是:
+
+- `llc --version` 里没有你的 target
+
+### 目标 2: `llc -march=toy` 或 `llc -mtriple=toy-unknown-elf` 不再报 unknown target
+
+你至少要保证这些函数或位置已经接好:
+
+- `Triple::ArchType`
+- `Triple::getArchTypeForLLVMName`
+- `Triple::getArchTypeName`
+- `LLVMInitializeToyTargetInfo()`
+
+这一目标的本质是:
+
+- 让字符串名字能解析成内部架构枚举
+- 再把这个架构枚举和 target 注册对象接起来
+
+如果你只改了 `Triple.h`, 没改 `Triple.cpp`, 往往就会卡在这一目标。
+
+### 目标 3: `llc` 已经认识 target, 并开始尝试创建后端
+
+你至少要保证这些东西存在:
+
+- `class ToyTargetMachine : public LLVMTargetMachine`
+- `LLVMInitializeToyTarget()`
+- `RegisterTargetMachine<ToyTargetMachine>`
+
+这一目标的本质是:
+
+- 从 “LLVM 知道有这个 target”
+- 走到 “LLVM 知道应该创建哪个 `TargetMachine` 类”
+
+如果这一步没做完, 常见现象是:
+
+- `Could not allocate target machine`
+
+### 目标 4: `TargetMachine` 不再一创建就因为 MC 依赖失败
+
+你至少要保证这些函数存在:
+
+- `createToyMCRegisterInfo`
+- `createToyMCInstrInfo`
+- `createToyMCSubtargetInfo`
+- `createToyMCAsmInfo`
+- `LLVMInitializeToyTargetMC()`
+
+这一目标的本质是:
+
+- 让 `TargetMachine` 初始化时需要的 MC 层对象有地方可创建
+
+如果这一步没做完, 常见现象是:
+
+- `Unable to create reg info`
+- `Unable to create asm info`
+
+### 目标 5: LLVM 能继续进入更后面的 codegen 阶段
+
+这时通常说明你已经完成了第一节, 后面才轮到:
+
+- `Subtarget`
+- `InstrInfo`
+- `RegisterInfo`
+- `FrameLowering`
+- `ISelLowering`
+
+也就是说, 第一节不是让你“后端能出码”, 而是让你走到:
+
+- target 已识别
+- target machine 可创建
+- MC 基础对象可创建
+
 ## 对应 toy 章节
 
 - `toy-1: llc 识别 target`
@@ -216,6 +314,48 @@ LLVM 里几乎都会沿用:
 作用:
 
 - 给 `TargetMachine` 初始化时要用到的 MC 层对象提供创建入口
+
+## 如果你只关心“为了某个现象该改什么”, 可以先看这里
+
+### 想实现 `llc --version`
+
+优先检查:
+
+- `llvm/CMakeLists.txt`
+- `Triple::ArchType`
+- `Triple::getArchTypeForLLVMName`
+- `Target TheToyTarget`
+- `LLVMInitializeToyTargetInfo()`
+
+### 想实现 `llc -march=toy` 不再 unknown
+
+优先检查:
+
+- `Triple::getArchTypeForLLVMName`
+- `Triple::getArchTypeName`
+- `LLVMInitializeToyTargetInfo()`
+
+### 想实现 `llc -mtriple=toy-unknown-elf` 能走到创建后端
+
+优先检查:
+
+- `LLVMInitializeToyTarget()`
+- `RegisterTargetMachine<ToyTargetMachine>`
+- `ToyTargetMachine` 类
+
+### 想实现 `llc` 不再报 `Unable to create reg info`
+
+优先检查:
+
+- `createToyMCRegisterInfo`
+- `LLVMInitializeToyTargetMC()`
+
+### 想实现 `llc` 不再报 `Unable to create asm info`
+
+优先检查:
+
+- `createToyMCAsmInfo`
+- `LLVMInitializeToyTargetMC()`
 
 ## 这一节的核心结论
 
