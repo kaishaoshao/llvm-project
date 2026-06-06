@@ -481,7 +481,7 @@ set(LLVM_ALL_TARGETS
   NVPTX
   PowerPC
   RISCV
-  MiniRiscv
+  CoralNPU
   Sparc
   SystemZ
   TOYRISCV
