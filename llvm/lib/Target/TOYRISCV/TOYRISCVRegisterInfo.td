@@ -45,8 +45,8 @@ let Namespace = "TOYRISCV" in {
 
 // Note: Type of XLenVT depends on the mode．RV32 → i32，RV64 → i64，unspecified → i32
 def XLenVT : ValueTypeByHwMode<
-  [RV32, RV64, DefaultMode],
-  [i32,  i64,  i32]
+  [DefaultMode, RV64],
+  [i32,         i64]
 >;
 
 // Register class for 32 general purpose integer registers
@@ -59,7 +59,7 @@ def GPR : RegisterClass<"TOYRISCV", [XLenVT], 32, (add
   )> {
     // Note: RegInfo<RS, SS, SA> where RS is register size, SS is memory size for spill out, SA is alignment on spill out
     let RegInfos = RegInfoByHwMode<
-      [RV32,              RV64,              DefaultMode],
-      [RegInfo<32,32,32>, RegInfo<64,64,64>, RegInfo<32,32,32>]
+      [DefaultMode,       RV64],
+      [RegInfo<32,32,32>, RegInfo<64,64,64>]
     >;
 }
