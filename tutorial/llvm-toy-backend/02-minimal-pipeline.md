@@ -21,14 +21,23 @@
 
 ## 目标 -> 需要实现什么函数
 
+如果你现在已经从 “target 可识别” 走到 “一跑 `llc -mtriple=coralnpu32 ...` 就崩”,  
+建议配合看 [08-debugging-llc.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/08-debugging-llc.md)。
+
+第二节最常见的调试重点是:
+
+- `RegisterTargetMachine<CoralNPUTargetMachine>` 是否真的注册
+- `CoralNPUTargetMachine` 构造函数有没有进到
+- `Target` 是否在 `createTargetMachine` 后变成空指针
+
 ### 目标 1: `llc -mtriple=...` 不再只停在 target 注册阶段
 
 你至少要保证这些存在:
 
-- `class MiniRiscvTargetMachine : public LLVMTargetMachine`
-- `LLVMInitializeMiniRiscvTarget()`
-- `RegisterTargetMachine<MiniRiscvTargetMachine>`
-- `MiniRiscvTargetMachine` 构造函数
+- `class CoralNPUTargetMachine : public LLVMTargetMachine`
+- `LLVMInitializeCoralNPUTarget()`
+- `RegisterTargetMachine<CoralNPUTargetMachine>`
+- `CoralNPUTargetMachine` 构造函数
 
 这一目标的本质是:
 
@@ -39,9 +48,9 @@
 
 你至少要保证这些存在:
 
-- `class MiniRiscvSubtarget`
-- `MiniRiscvTargetMachine::getSubtargetImpl`
-- `MiniRiscvSubtarget` 构造函数
+- `class CoralNPUSubtarget`
+- `CoralNPUTargetMachine::getSubtargetImpl`
+- `CoralNPUSubtarget` 构造函数
 
 这一目标的本质是:
 
@@ -58,10 +67,10 @@
 
 你至少要保证这些存在:
 
-- `MiniRiscvSubtarget::getInstrInfo`
-- `MiniRiscvSubtarget::getRegisterInfo`
-- `MiniRiscvSubtarget::getFrameLowering`
-- `MiniRiscvSubtarget::getTargetLowering`
+- `CoralNPUSubtarget::getInstrInfo`
+- `CoralNPUSubtarget::getRegisterInfo`
+- `CoralNPUSubtarget::getFrameLowering`
+- `CoralNPUSubtarget::getTargetLowering`
 
 这一目标的本质是:
 
@@ -71,8 +80,8 @@
 
 你至少要保证这些存在:
 
-- `class MiniRiscvDAGToDAGISel`
-- `MiniRiscvTargetMachine::createPassConfig`
+- `class CoralNPUDAGToDAGISel`
+- `CoralNPUTargetMachine::createPassConfig`
 - `TargetPassConfig::addInstSelector` 的覆写
 
 这一目标的本质是:
@@ -83,9 +92,9 @@
 
 你至少要保证这些存在:
 
-- `class MiniRiscvTargetLowering`
-- `MiniRiscvSubtarget` 中持有它
-- `MiniRiscvSubtarget::getTargetLowering`
+- `class CoralNPUTargetLowering`
+- `CoralNPUSubtarget` 中持有它
+- `CoralNPUSubtarget::getTargetLowering`
 
 这一目标的本质是:
 
@@ -95,9 +104,9 @@
 
 你至少要保证这些存在:
 
-- `class MiniRiscvFrameLowering`
-- `MiniRiscvSubtarget` 中持有它
-- `MiniRiscvSubtarget::getFrameLowering`
+- `class CoralNPUFrameLowering`
+- `CoralNPUSubtarget` 中持有它
+- `CoralNPUSubtarget::getFrameLowering`
 
 这一目标的本质是:
 
@@ -107,9 +116,9 @@
 
 你至少要保证这些存在:
 
-- `class MiniRiscvAsmPrinter`
-- `class MiniRiscvInstPrinter`
-- `LLVMInitializeMiniRiscvTargetMC()` 已经注册对应 MC 能力
+- `class CoralNPUAsmPrinter`
+- `class CoralNPUInstPrinter`
+- `LLVMInitializeCoralNPUTargetMC()` 已经注册对应 MC 能力
 
 这一目标的本质是:
 
@@ -142,15 +151,15 @@
 - [TargetDesc/ToyInstPrinter.h](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/TargetDesc/ToyInstPrinter.h)
 - [TargetDesc/ToyInstPrinter.cpp](/Volumes/wsk/code/llvm-mlir/llvm-toy/llvm/lib/Target/Toy/TargetDesc/ToyInstPrinter.cpp)
 
-## 如果你现在是在做 `MINIRISCV`, 第二节最值得优先补什么
+## 如果你现在是在做 `CoralNPU`, 第二节最值得优先补什么
 
 结合你当前仓库状态, 第二节最适合优先落地的是下面这个顺序:
 
-1. `MiniRiscvTargetMachine`
-2. `MiniRiscvSubtarget`
-3. `MiniRiscvTargetLowering`
-4. `MiniRiscvFrameLowering`
-5. `MiniRiscvDAGToDAGISel`
+1. `CoralNPUTargetMachine`
+2. `CoralNPUSubtarget`
+3. `CoralNPUTargetLowering`
+4. `CoralNPUFrameLowering`
+5. `CoralNPUDAGToDAGISel`
 
 先不要同时展开:
 
@@ -182,7 +191,7 @@
 
 这通常意味着你还缺:
 
-- 真正的 `MiniRiscvTargetMachine` 类内容
+- 真正的 `CoralNPUTargetMachine` 类内容
 - `createPassConfig`
 - `getSubtargetImpl`
 
@@ -190,14 +199,14 @@
 
 这通常意味着你还缺:
 
-- `MiniRiscvSubtarget`
+- `CoralNPUSubtarget`
 - `Subtarget` 里持有的 `InstrInfo/RegisterInfo/FrameLowering/TargetLowering`
 
 ### 现象 3: pipeline 里没有你的 isel pass
 
 这通常意味着你还缺:
 
-- `MiniRiscvDAGToDAGISel`
+- `CoralNPUDAGToDAGISel`
 - `TargetPassConfig::addInstSelector`
 
 ### 现象 4: 你觉得“我还没实现指令, 为什么先要这些类”
@@ -227,7 +236,7 @@
 
 如果换成你当前自己的 target 名字, 第二节你最终想补到的就是:
 
-- `MiniRiscvDAGToDAGISel`
+- `CoralNPUDAGToDAGISel`
 
 它在最初阶段甚至可以几乎不做复杂逻辑, 但它必须存在, 因为:
 
@@ -313,12 +322,12 @@ LLVM 的很多 pass 都是先拿 `Subtarget`, 再从里面取这些对象。
 
 如果你现在要在自己的后端里实现这一层, 最小关注点就是:
 
-- `MiniRiscvSubtarget` 里有没有持有:
+- `CoralNPUSubtarget` 里有没有持有:
   - `InstrInfo`
   - `RegisterInfo`
   - `FrameLowering`
   - `TargetLowering`
-- `MiniRiscvTargetMachine::getSubtargetImpl` 能不能返回它
+- `CoralNPUTargetMachine::getSubtargetImpl` 能不能返回它
 
 ### `ToyTargetLowering`
 
@@ -417,11 +426,11 @@ LLVM 的很多 pass 都是先拿 `Subtarget`, 再从里面取这些对象。
 
 那么第二节最稳的推进顺序通常是:
 
-1. 先把 `MiniRiscvTargetMachine` 补成像样的最小骨架
-2. 再实现 `MiniRiscvSubtarget`
+1. 先把 `CoralNPUTargetMachine` 补成像样的最小骨架
+2. 再实现 `CoralNPUSubtarget`
 3. 再让 `Subtarget` 能返回最小 `TargetLowering`
 4. 再让 `Subtarget` 能返回最小 `FrameLowering`
-5. 最后把 `MiniRiscvDAGToDAGISel` 接进 `createPassConfig`
+5. 最后把 `CoralNPUDAGToDAGISel` 接进 `createPassConfig`
 
 这个顺序的好处是:
 

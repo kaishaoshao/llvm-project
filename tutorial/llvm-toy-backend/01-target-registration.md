@@ -18,6 +18,14 @@
 
 ## 目标 -> 需要实现什么函数
 
+如果你在第一节阶段已经遇到:
+
+- `llc -mtriple=...` 崩溃
+- `Could not allocate target machine`
+- `Unable to create reg info`
+
+建议同时打开 [08-debugging-llc.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/08-debugging-llc.md), 按 `Debug` 构建 + `lldb` 的方式看 `lookupTarget` 和 `createTargetMachine`。
+
 ### 目标 1: `llc --version` 里出现你的 target
 
 你至少要保证这些东西存在:

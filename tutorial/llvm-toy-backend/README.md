@@ -1,4 +1,4 @@
-# LLVM Toy Backend Tutorial
+# LLVM Backend Tutorial For CoralNPU
 
 这套教程基于两份材料整理:
 
@@ -11,6 +11,12 @@
 2. 再理解一个最小 target 是怎么被接进 LLVM 的
 3. 再逐步理解 isel, MachineInstr, MCInst, 栈帧, 调用约定
 4. 最后再看浮点, object file, intrinsic 等扩展
+
+虽然这套资料仍然以 `llvm-toy` 为参考样本, 但从这一版开始, 文档里的“你的目标 target”默认指向 `CoralNPU`。
+也就是说:
+
+- `Toy` 代码仍然是教学参考
+- 你当前仓库里的真实练习目标默认按 `CoralNPU` 来组织
 
 ## 这套教程适合谁
 
@@ -47,6 +53,24 @@
 6. [05-calls-and-abi.md](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/tutorial/llvm-toy-backend/05-calls-and-abi.md)
 7. [06-advanced-topics.md](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/tutorial/llvm-toy-backend/06-advanced-topics.md)
 8. [07-file-map-and-glossary.md](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/tutorial/llvm-toy-backend/07-file-map-and-glossary.md)
+9. [08-debugging-llc.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/08-debugging-llc.md)
+
+## 如果你当前目标已经转向 CoralNPU
+
+这套 `llvm-toy-backend` 资料仍然有用, 但它解决的是:
+
+- LLVM target backend 怎么搭起来
+
+如果你现在的目标已经转向 `CoralNPU`, 建议同时配合阅读:
+
+- [tutorial/README.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/README.md)
+- [coralnpu/README.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/coralnpu/README.md)
+
+因为 CoralNPU 不只是“换个名字的 RISC-V target”, 它还有:
+
+- 更强的向量 / ML 语义
+- 特定的程序装载和仿真方式
+- 更明显的系统集成背景
 
 ## 教程组织方式
 
