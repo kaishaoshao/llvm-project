@@ -24,6 +24,63 @@
 
 这是一条 “每次只让编译器多走一步” 的路线。
 
+## 为什么一定要按这个顺序做
+
+很多初学者最容易困惑的是:
+
+- 为什么先做 `TargetMachine`
+- 为什么不是先做 `Subtarget`
+- 为什么不是先做 `InstrInfo` 或 `ISel`
+
+最关键的原因不是“哪一块更重要”, 而是:
+
+- LLVM 运行时就是按这个顺序来要对象的
+
+也就是说, 顺序不是我们主观规定的, 而是 `llc` 真的会按下面这条链一路往下问:
+
+1. 你是谁
+2. 你的后端总入口是谁
+3. 你的低层 MC 对象怎么创建
+4. 你的 `Subtarget` 在哪里
+5. 你的 `InstrInfo/RegisterInfo/FrameLowering/TargetLowering` 在哪里
+6. 你的 isel pass 怎么接进 pipeline
+
+所以教程里的顺序本质上是在跟着 LLVM 的真实调用顺序走。
+
+## 一条最实用的创建顺序图
+
+如果把一个新 target 被 `llc` 使用时的对象关系压缩成一条线, 最适合记成:
+
+`名字`
+-> `Target`
+-> `TargetMachine`
+-> `TargetMC`
+-> `Subtarget`
+-> `InstrInfo/RegisterInfo/FrameLowering/TargetLowering`
+-> `ISel/AsmPrinter`
+
+这条顺序背后的含义是:
+
+- `名字`
+  先靠 `Triple` 和 `TargetInfo` 识别出来
+- `Target`
+  是 LLVM 注册表里挂着的 target 对象
+- `TargetMachine`
+  是真正进入后端 codegen 的总入口
+- `TargetMC`
+  是 `TargetMachine` 初始化后很快就会依赖的底层工厂
+- `Subtarget`
+  通常由 `TargetMachine` 持有或创建
+- `InstrInfo/RegisterInfo/FrameLowering/TargetLowering`
+  通常再由 `Subtarget` 提供
+
+所以:
+
+- 没有 `TargetMachine`, LLVM 就没法继续要 `Subtarget`
+- 没有 `Subtarget`, LLVM 也没法继续要 `InstrInfo`、`FrameLowering` 这些能力对象
+
+这也是为什么学习顺序不能随意打乱。
+
 ## LLVM 后端的主要层次
 
 ### 从高到低

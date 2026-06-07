@@ -26,6 +26,66 @@
 
 建议同时打开 [08-debugging-llc.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/08-debugging-llc.md), 按 `Debug` 构建 + `lldb` 的方式看 `lookupTarget` 和 `createTargetMachine`。
 
+## 为什么第一节里要先做 `TargetMachine`
+
+这是第一节最容易让人困惑的地方。
+
+很多人会问:
+
+- 我为什么不能先做 `Subtarget`
+- 我为什么不能先做 `InstrInfo`
+- 我为什么先要补 `TargetMachine`
+
+原因很简单:
+
+- LLVM 在识别出 target 名字之后, 下一步立刻就会尝试创建 `TargetMachine`
+
+也就是说, 当你运行:
+
+```bash
+llc -mtriple=coralnpu32 test.ll
+```
+
+LLVM 的问题顺序并不是:
+
+- “你的寄存器类有哪些”
+- “你的指令怎么选”
+
+而是先问:
+
+- “我已经知道这是 `coralnpu32`, 那我现在应该创建哪个 `TargetMachine` 类?”
+
+所以:
+
+- `TargetInfo` 解决的是 “LLVM 认不认识这个名字”
+- `TargetMachine` 解决的是 “LLVM 知道应该 new 哪个后端总入口对象”
+
+只有这一步成立之后, 后面的:
+
+- `Subtarget`
+- `InstrInfo`
+- `RegisterInfo`
+- `FrameLowering`
+- `ISel`
+
+才有机会被继续问到。
+
+换句话说:
+
+- `Subtarget` 不是独立先创建的
+- 它通常是由 `TargetMachine` 持有或返回的
+
+所以没有 `TargetMachine`, LLVM 根本还走不到下一层。
+
+你可以把第一节的顺序记成:
+
+`名字`
+-> `Target`
+-> `TargetMachine`
+-> `TargetMC`
+
+这就是为什么第一节里 `TargetMachine` 一定排在 `Subtarget` 之前。
+
 ### 目标 1: `llc --version` 里出现你的 target
 
 你至少要保证这些东西存在:

@@ -30,6 +30,41 @@
 - `CoralNPUTargetMachine` 构造函数有没有进到
 - `Target` 是否在 `createTargetMachine` 后变成空指针
 
+## 第二节开始前要先建立的依赖关系
+
+如果你在这里还会疑惑:
+
+- 为什么第二节才轮到 `Subtarget`
+- 为什么 `InstrInfo` / `FrameLowering` 不能比 `TargetMachine` 更早做
+
+可以先记住这条对象依赖:
+
+`TargetMachine`
+-> `Subtarget`
+-> `InstrInfo/RegisterInfo/FrameLowering/TargetLowering`
+
+这条依赖意味着:
+
+- `Subtarget` 通常是 `TargetMachine` 的成员, 或由 `TargetMachine::getSubtargetImpl()` 返回
+- `InstrInfo/RegisterInfo/FrameLowering/TargetLowering` 又通常是 `Subtarget` 持有并提供的
+
+所以你现在在第二节做的事, 本质上是在补:
+
+- `TargetMachine` 后面那一整串能力对象
+
+而不是跳过 `TargetMachine` 直接写后面的类。
+
+这也是为什么第二节的第一个目标仍然是:
+
+- 把 `CoralNPUTargetMachine` 变成真正可用的总入口
+
+然后才轮到:
+
+- `CoralNPUSubtarget`
+- `CoralNPUTargetLowering`
+- `CoralNPUFrameLowering`
+- `CoralNPUDAGToDAGISel`
+
 ### 目标 1: `llc -mtriple=...` 不再只停在 target 注册阶段
 
 你至少要保证这些存在:
