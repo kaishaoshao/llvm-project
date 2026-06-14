@@ -6,6 +6,22 @@
 - 理解教程中 `toy-4` 到 `toy-10` 的推进顺序
 - 分清 “先占位” 和 “开始真正出码” 的边界
 
+## 这一节完成后你应该达到什么状态
+
+做完第二节, 你的目标也不是“已经能正确生成 CoralNPU 汇编”, 而是:
+
+1. `CoralNPUTargetMachine` 不再只是空壳
+2. `CoralNPUSubtarget` 能被返回
+3. `TargetLowering/RegisterInfo/FrameLowering` 有最小占位对象
+4. pass pipeline 开始有地方接入 target-specific isel
+
+如果第二节结束后你看到的是:
+
+- `Subtarget` 相关报错往后移动了
+- `TargetLowering` / `FrameLowering` 缺失问题开始暴露
+
+那通常说明你在正确推进。
+
 ## 这一节怎么读
 
 第一节解决的是:
@@ -79,6 +95,12 @@
 - 让 LLVM 不只是“认得这个 target”
 - 而是真的有一个 codegen 总入口类可以创建
 
+推荐验证命令:
+
+```bash
+./build/bin/llc -mtriple=coralnpu32 test.ll
+```
+
 ### 目标 2: `TargetMachine` 能返回一个 `Subtarget`
 
 你至少要保证这些存在:
@@ -98,6 +120,11 @@
 - `FrameLowering`
 - `TargetLowering`
 
+推荐验证方式:
+
+- `lldb` 里看 `CoralNPUTargetMachine::getSubtargetImpl` 有没有被走到
+- 或在实现里先加最小日志/断点确认
+
 ### 目标 3: `Subtarget` 能提供最小 codegen 能力对象
 
 你至少要保证这些存在:
@@ -111,6 +138,10 @@
 
 - 让 LLVM 的 codegen pass 有统一入口去拿目标相关策略对象
 
+推荐验证方式:
+
+- 看崩溃是否从 “拿不到 `Subtarget`” 往后移动到更具体的能力对象
+
 ### 目标 4: LLVM 能进入 SelectionDAG 指令选择骨架
 
 你至少要保证这些存在:
@@ -122,6 +153,12 @@
 这一目标的本质是:
 
 - 让 pass pipeline 真正把目标专属的 isel pass 插进去
+
+推荐验证方式:
+
+- 看 `createPassConfig`
+- 看 `addInstSelector`
+- 必要时配合 `-debug-pass=Structure`
 
 ### 目标 5: LLVM 有最小 lowering 骨架
 
@@ -158,6 +195,21 @@
 这一目标的本质是:
 
 - 让机器指令后面有机会继续走向 `MCInst` 和 asm 文本
+
+## 第二节推荐的实际操作顺序
+
+如果你要自己落地第二节, 最推荐按这个顺序:
+
+1. 先把 `CoralNPUTargetMachine` 补完整到最小可用
+2. 再实现 `CoralNPUSubtarget`
+3. 再让 `CoralNPUSubtarget` 持有 `TargetLowering/RegisterInfo/FrameLowering`
+4. 再补 `createPassConfig`
+5. 最后才把 `CoralNPUDAGToDAGISel` 接进来
+
+这一节最重要的任务边界是:
+
+- 先把对象链接上
+- 还不是去追求完整指令语义
 
 ## 对应 toy 章节
 

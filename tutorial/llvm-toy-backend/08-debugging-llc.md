@@ -287,4 +287,4 @@ b /Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/Cor
 ## 和前两节怎么配合看
 
 - 如果你现在还在做 target 识别, 配合看 [01-target-registration.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/01-target-registration.md)
-- 如果你现在已经进入 `TargetMachine` / `Subtarget` 骨架阶段, 配合看 [02-minimal-pipeline.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/02-minimal-pipeline.md)
+- 如果你现在已经进入 `TargetMachine` / `Subtarget` 骨架阶段, 配合看 [03-minimal-pipeline.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/03-minimal-pipeline.md)

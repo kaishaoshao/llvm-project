@@ -24,6 +24,23 @@
 
 这是一条 “每次只让编译器多走一步” 的路线。
 
+## 先把整条路线看成任务列表
+
+如果你现在更需要一张“我接下来到底做什么”的清单, 可以先把整个教程压缩成下面 7 个任务:
+
+1. 让 `llc --version` 看到 `coralnpu32`
+2. 让 `llc -mtriple=coralnpu32 test.ll` 不再报 unknown target
+3. 让 `CoralNPUTargetMachine` 真正开始被创建
+4. 让 `TargetMC` 不再报 `Unable to create reg info`
+5. 让 `Subtarget` 和 `TargetLowering/FrameLowering/RegisterInfo` 链接起来
+6. 让 `DAGToDAGISel` 和 `AsmPrinter` 开始接进 pipeline
+7. 让最小 IR 用例能真正往目标汇编方向推进
+
+你后面读每一节时, 最好都先问:
+
+- 这一节是在帮我完成上面哪一个任务?
+- 完成后我应该看到什么新现象?
+
 ## 为什么一定要按这个顺序做
 
 很多初学者最容易困惑的是:
@@ -211,6 +228,24 @@
 - asm/object emission
 
 toy 教程的顺序恰好是把这些问题串成一条因果链。前一步的报错, 就是下一步的学习入口。
+
+## 每推进一步, 你应该怎么验收
+
+教程里每一步最好都用 “一个命令 + 一个现象” 验收。
+
+例如:
+
+- `llc --version`
+  - 看 target 是否已注册
+- `llc -mtriple=coralnpu32 test.ll`
+  - 看 `TargetMachine` 是否开始创建
+- `lldb -- ./build-debug/bin/llc -mtriple=coralnpu32 test.ll`
+  - 看具体崩在 `lookupTarget`、`createTargetMachine`、`initAsmInfo` 还是更后面
+
+如果没有这种“命令 -> 现象”的验收方式, 很容易出现:
+
+- 写了很多代码
+- 但不知道到底多走了哪一步
 
 ## 建议的学习策略
 

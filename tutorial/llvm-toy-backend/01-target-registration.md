@@ -6,6 +6,21 @@
 - 理解 `TheToyTarget` 是什么
 - 理解 `LLVMInitializeToyTargetInfo` / `LLVMInitializeToyTarget` / `LLVMInitializeToyTargetMC` 三者的分工
 
+## 这一节完成后你应该达到什么状态
+
+做完第一节, 你的目标不是 “后端能出码”, 而是下面三件事尽量成立:
+
+1. `llc --version` 里能看到 `coralnpu32`
+2. `llc -mtriple=coralnpu32 test.ll` 不再报 unknown target
+3. LLVM 开始尝试创建 `CoralNPUTargetMachine`, 或进一步进入 `initAsmInfo()`
+
+如果你现在已经走到:
+
+- `Could not allocate target machine`
+- `Unable to create reg info`
+
+这通常不是失败, 而是说明第一节正在往后半段推进。
+
 ## 这一节最重要的新用法
 
 这一节你可以不要按“文件顺序”读, 而是按“目标顺序”读。  
@@ -104,6 +119,12 @@ LLVM 的问题顺序并不是:
 
 - `llc --version` 里没有你的 target
 
+推荐验证命令:
+
+```bash
+./build/bin/llc --version
+```
+
 ### 目标 2: `llc -march=toy` 或 `llc -mtriple=toy-unknown-elf` 不再报 unknown target
 
 你至少要保证这些函数或位置已经接好:
@@ -119,6 +140,12 @@ LLVM 的问题顺序并不是:
 - 再把这个架构枚举和 target 注册对象接起来
 
 如果你只改了 `Triple.h`, 没改 `Triple.cpp`, 往往就会卡在这一目标。
+
+推荐验证命令:
+
+```bash
+./build/bin/llc -mtriple=coralnpu32 test.ll
+```
 
 ### 目标 3: `llc` 已经认识 target, 并开始尝试创建后端
 
@@ -136,6 +163,12 @@ LLVM 的问题顺序并不是:
 如果这一步没做完, 常见现象是:
 
 - `Could not allocate target machine`
+
+推荐验证命令:
+
+```bash
+./build/bin/llc -mtriple=coralnpu32 test.ll
+```
 
 ### 目标 4: `TargetMachine` 不再一创建就因为 MC 依赖失败
 
@@ -156,6 +189,150 @@ LLVM 的问题顺序并不是:
 - `Unable to create reg info`
 - `Unable to create asm info`
 
+推荐验证命令:
+
+```bash
+./build/bin/llc -mtriple=coralnpu32 test.ll
+```
+
+## `createCoralNPUMCRegisterInfo` 为什么要这样写
+
+当你已经走到:
+
+- `TargetMachine` 开始创建
+- 但 `llc` 断在 `LLVMTargetMachine::initAsmInfo()`
+- 报错是 `Unable to create reg info`
+
+这说明 LLVM 此时正在做的事是:
+
+```cpp
+MRI.reset(TheTarget.createMCRegInfo(getTargetTriple().str()));
+assert(MRI && "Unable to create reg info");
+```
+
+也就是说, LLVM 在问你的 target:
+
+- “请给我一个 `MCRegisterInfo` 对象”
+
+所以 `createCoralNPUMCRegisterInfo` 的职责不是:
+
+- 做寄存器分配
+- 处理 callee-saved
+- 决定栈帧寄存器
+
+而只是:
+
+- 创建一个 **MC 层的寄存器元信息对象**
+
+这个对象里放的是更底层的内容, 例如:
+
+- target 有哪些物理寄存器
+- 哪个寄存器是返回地址寄存器
+- DWARF 寄存器编号等基础映射
+
+最小形状通常像这样:
+
+```cpp
+static MCRegisterInfo *createCoralNPUMCRegisterInfo(const Triple &TT) {
+  auto *X = new MCRegisterInfo();
+  InitCoralNPUMCRegisterInfo(X, CoralNPU::RA);
+  return X;
+}
+```
+
+这里每一行的作用分别是:
+
+- `new MCRegisterInfo()`
+  - 先分配一个空的 MC 寄存器信息对象
+- `InitCoralNPUMCRegisterInfo(...)`
+  - 再用 TableGen 生成的初始化函数把寄存器描述灌进去
+- `CoralNPU::RA`
+  - 告诉 LLVM 默认的返回地址寄存器是谁
+
+为什么必须这样分两步写:
+
+- 因为真正的寄存器描述不是手写塞进去的
+- 而是 `.td` -> `GenRegisterInfo.inc` -> `Init...MCRegisterInfo(...)` 这一条链生成的
+
+所以本质上:
+
+- `createCoralNPUMCRegisterInfo` 只是“创建对象并调用 TableGen 生成的初始化函数”
+
+它不是寄存器策略实现点, 只是 MC 层的工厂函数。
+
+## `LLVMInitializeCoralNPUTargetMC()` 里到底该注册哪几行
+
+前面的 `create...` 函数只是定义了:
+
+- “如果需要某种 MC 对象, 应该怎么创建”
+
+但如果你不把这些工厂挂到 target 上, LLVM 仍然不会主动来调它们。
+
+所以 `LLVMInitializeCoralNPUTargetMC()` 的作用就是:
+
+- 把这些工厂函数注册到 `TheCoralNPUTarget`
+
+第一版最少应该注册这几类:
+
+```cpp
+TargetRegistry::RegisterMCRegInfo(TheCoralNPUTarget,
+                                  createCoralNPUMCRegisterInfo);
+TargetRegistry::RegisterMCInstrInfo(TheCoralNPUTarget,
+                                    createCoralNPUMCInstrInfo);
+TargetRegistry::RegisterMCSubtargetInfo(TheCoralNPUTarget,
+                                        createCoralNPUMCSubtargetInfo);
+TargetRegistry::RegisterMCAsmInfo(TheCoralNPUTarget,
+                                  createCoralNPUMCAsmInfo);
+```
+
+这四行各自回答的是:
+
+- `RegisterMCRegInfo`
+  - LLVM 需要寄存器元信息时, 调谁
+- `RegisterMCInstrInfo`
+  - LLVM 需要指令元信息时, 调谁
+- `RegisterMCSubtargetInfo`
+  - LLVM 需要 MC 层 subtarget 信息时, 调谁
+- `RegisterMCAsmInfo`
+  - LLVM 需要汇编格式信息时, 调谁
+
+为什么这四行通常要一起补:
+
+- 因为 `initAsmInfo()` 不会只停在 `MCRegisterInfo`
+- 你修完 `reg info`, 下一步通常立刻会继续要:
+  - `MCInstrInfo`
+  - `MCSubtargetInfo`
+  - `MCAsmInfo`
+
+所以工程上更稳的做法不是一次只修一个, 而是把最小的 `TargetMC` 工厂一起补齐。
+
+## 这一块最容易混淆的边界
+
+最容易搞混的是下面两类对象:
+
+- `MCRegisterInfo`
+- `RegisterInfo`
+
+它们不是一回事。
+
+`MCRegisterInfo`:
+
+- 属于 MC 层
+- 解决的是 “低层寄存器元信息有没有”
+- 第一节后半段就会被 `TargetMachine::initAsmInfo()` 立刻用到
+
+`RegisterInfo`:
+
+- 属于 codegen 层
+- 解决的是 “保留寄存器是谁、FrameIndex 怎么消解、callee-saved 怎么处理”
+- 这是第二节以后才会重点展开的对象
+
+所以你现在在 `Unable to create reg info` 这里, 真正缺的是:
+
+- `MCRegisterInfo`
+
+不是后面的 `RegisterInfo.cpp`。
+
 ### 目标 5: LLVM 能继续进入更后面的 codegen 阶段
 
 这时通常说明你已经完成了第一节, 后面才轮到:
@@ -171,6 +348,21 @@ LLVM 的问题顺序并不是:
 - target 已识别
 - target machine 可创建
 - MC 基础对象可创建
+
+## 第一节推荐的实际操作顺序
+
+如果你现在正要自己动手, 最推荐按这个顺序推进:
+
+1. 先确认 `Triple` 和 `TargetInfo` 已经让 `llc --version` 出现 `coralnpu32`
+2. 再补 `CoralNPUTargetMachine.h/.cpp`
+3. 再跑一次 `llc -mtriple=coralnpu32 test.ll`
+4. 如果崩在 `Could not allocate target machine`, 回头查 `RegisterTargetMachine`
+5. 如果崩在 `Unable to create reg info`, 再去补 `CoralNPUTargetDesc.cpp`
+
+这个顺序的重点是:
+
+- 每次只多走一步
+- 不要在 `TargetMachine` 还没站起来时就提前展开 `Subtarget` 和 `ISel`
 
 ## 对应 toy 章节
 

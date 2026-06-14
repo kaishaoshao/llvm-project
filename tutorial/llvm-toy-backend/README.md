@@ -47,13 +47,117 @@
 
 1. [00-overview.md](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/tutorial/llvm-toy-backend/00-overview.md)
 2. [01-target-registration.md](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/tutorial/llvm-toy-backend/01-target-registration.md)
-3. [02-minimal-pipeline.md](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/tutorial/llvm-toy-backend/02-minimal-pipeline.md)
-4. [03-isel-and-asm.md](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/tutorial/llvm-toy-backend/03-isel-and-asm.md)
-5. [04-frame-and-registers.md](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/tutorial/llvm-toy-backend/04-frame-and-registers.md)
-6. [05-calls-and-abi.md](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/tutorial/llvm-toy-backend/05-calls-and-abi.md)
-7. [06-advanced-topics.md](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/tutorial/llvm-toy-backend/06-advanced-topics.md)
-8. [07-file-map-and-glossary.md](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/tutorial/llvm-toy-backend/07-file-map-and-glossary.md)
+3. [02-td-files-for-coralnpu.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/02-td-files-for-coralnpu.md)
+4. [03-minimal-pipeline.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/03-minimal-pipeline.md)
+5. [04-isel-and-asm.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/04-isel-and-asm.md)
+6. [05-frame-and-registers.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/05-frame-and-registers.md)
+7. [06-calls-and-abi.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/06-calls-and-abi.md)
+8. [07-advanced-topics.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/07-advanced-topics.md)
 9. [08-debugging-llc.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/08-debugging-llc.md)
+10. [09-file-map-and-glossary.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/09-file-map-and-glossary.md)
+
+## 最实用的任务地图
+
+如果你不是想“系统读一遍”, 而是想“今天先把后端往前推一步”, 最适合先看这张任务地图。
+
+### 阶段 A: 让 LLVM 识别 target
+
+目标:
+
+- `llc --version` 里出现 `coralnpu32`
+- `llc -mtriple=coralnpu32 ...` 不再报 unknown target
+
+主要文件:
+
+- `llvm/include/llvm/TargetParser/Triple.h`
+- `llvm/lib/TargetParser/Triple.cpp`
+- `llvm/lib/Target/CoralNPU/TargetInfo/CoralNPUTargetInfo.cpp`
+- `llvm/CMakeLists.txt`
+
+先看:
+
+- [01-target-registration.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/01-target-registration.md)
+
+### 阶段 B: 让 `TargetMachine` 能创建
+
+目标:
+
+- `llc -mtriple=coralnpu32 test.ll` 开始进入你的 `CoralNPUTargetMachine`
+
+主要文件:
+
+- `llvm/lib/Target/CoralNPU/CoralNPUTargetMachine.h`
+- `llvm/lib/Target/CoralNPU/CoralNPUTargetMachine.cpp`
+
+先看:
+
+- [01-target-registration.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/01-target-registration.md)
+- [03-minimal-pipeline.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/03-minimal-pipeline.md)
+
+### 阶段 C: 让 `TargetMC` 不再报 `Unable to create reg info`
+
+目标:
+
+- `TargetMachine::initAsmInfo()` 能拿到 `MCRegisterInfo`、`MCInstrInfo`、`MCSubtargetInfo`、`MCAsmInfo`
+
+主要文件:
+
+- `llvm/lib/Target/CoralNPU/MCTargetDesc/CoralNPUTargetDesc.cpp`
+
+先看:
+
+- [01-target-registration.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/01-target-registration.md)
+- [08-debugging-llc.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/08-debugging-llc.md)
+
+### 阶段 D: 让 codegen 骨架站起来
+
+目标:
+
+- `TargetMachine -> Subtarget -> TargetLowering/RegisterInfo/FrameLowering`
+  这条链成立
+
+主要文件:
+
+- `CoralNPUSubtarget.*`
+- `CoralNPUTargetLowering.*`
+- `CoralNPURegisterInfo.*`
+- `CoralNPUFrameLowering.*`
+
+先看:
+
+- [03-minimal-pipeline.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/03-minimal-pipeline.md)
+- [02-td-files-for-coralnpu.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/02-td-files-for-coralnpu.md)
+
+### 阶段 E: 让最小 IR 真正开始出目标相关结果
+
+目标:
+
+- 最小 `ret i32 0`
+- 以及后续最小 `addi/load/store`
+  能开始进入 isel / asm 路径
+
+主要文件:
+
+- `CoralNPUDAGToDAGISel.*`
+- `CoralNPUAsmPrinter.*`
+- `CoralNPUInstPrinter.*`
+- `.td` 文件一套
+
+先看:
+
+- [04-isel-and-asm.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/04-isel-and-asm.md)
+- [05-frame-and-registers.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/05-frame-and-registers.md)
+- [02-td-files-for-coralnpu.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/02-td-files-for-coralnpu.md)
+
+## 每节建议怎么使用
+
+每一节都建议按下面这个顺序使用:
+
+1. 先看“这一节的目标”
+2. 再看“要实现哪些函数”
+3. 再看“这一步完成后的预期现象”
+4. 真跑一次命令
+5. 如果失败, 对照“常见报错”和 [08-debugging-llc.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/08-debugging-llc.md)
 
 ## 如果你当前目标已经转向 CoralNPU
 
