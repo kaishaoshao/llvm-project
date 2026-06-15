@@ -3,8 +3,8 @@
 ## 学习目标
 
 - 理解 `toy-1` 到 `toy-3` 的意义
-- 理解 `TheToyTarget` 是什么
-- 理解 `LLVMInitializeToyTargetInfo` / `LLVMInitializeToyTarget` / `LLVMInitializeToyTargetMC` 三者的分工
+- 理解 `TheCoralNPUTarget` 是什么
+- 理解 `LLVMInitializeCoralNPUTargetInfo` / `LLVMInitializeCoralNPUTarget` / `LLVMInitializeCoralNPUTargetMC` 三者的分工
 
 ## 这一节完成后你应该达到什么状态
 
@@ -107,8 +107,8 @@ LLVM 的问题顺序并不是:
 
 - `Triple::ArchType` 里有你的架构枚举
 - `Triple::getArchTypeForLLVMName`
-- `Target TheToyTarget;`
-- `LLVMInitializeToyTargetInfo()`
+- `Target TheCoralNPUTarget;`
+- `LLVMInitializeCoralNPUTargetInfo()`
 - `RegisterTarget<...>`
 
 这一目标的本质是:
@@ -132,7 +132,7 @@ LLVM 的问题顺序并不是:
 - `Triple::ArchType`
 - `Triple::getArchTypeForLLVMName`
 - `Triple::getArchTypeName`
-- `LLVMInitializeToyTargetInfo()`
+- `LLVMInitializeCoralNPUTargetInfo()`
 
 这一目标的本质是:
 
@@ -151,9 +151,9 @@ LLVM 的问题顺序并不是:
 
 你至少要保证这些东西存在:
 
-- `class ToyTargetMachine : public LLVMTargetMachine`
-- `LLVMInitializeToyTarget()`
-- `RegisterTargetMachine<ToyTargetMachine>`
+- `class CoralNPUTargetMachine : public LLVMTargetMachine`
+- `LLVMInitializeCoralNPUTarget()`
+- `RegisterTargetMachine<CoralNPUTargetMachine>`
 
 这一目标的本质是:
 
@@ -174,11 +174,11 @@ LLVM 的问题顺序并不是:
 
 你至少要保证这些函数存在:
 
-- `createToyMCRegisterInfo`
-- `createToyMCInstrInfo`
-- `createToyMCSubtargetInfo`
-- `createToyMCAsmInfo`
-- `LLVMInitializeToyTargetMC()`
+- `createCoralNPUMCRegisterInfo`
+- `createCoralNPUMCInstrInfo`
+- `createCoralNPUMCSubtargetInfo`
+- `createCoralNPUMCAsmInfo`
+- `LLVMInitializeCoralNPUTargetMC()`
 
 这一目标的本质是:
 
@@ -194,6 +194,84 @@ LLVM 的问题顺序并不是:
 ```bash
 ./build/bin/llc -mtriple=coralnpu32 test.ll
 ```
+
+## 为什么 `MCTargetDesc.h` 不能是空文件
+
+这是 `CoralNPU` 这一版代码里非常容易踩坑的地方。
+
+很多人一开始会以为:
+
+- `CoralNPUTargetDesc.cpp` 里 include 了 `CoralNPUGenRegisterInfo.inc`
+- 那 `CoralNPU::RA`、`CoralNPU::GPRRegClassID` 这些名字自然就应该能用
+
+其实不是。
+
+生成文件通常分成两层用途:
+
+1. **枚举 / 声明**
+2. **MC 描述实现**
+
+以 `RegisterInfo` 为例:
+
+- `GET_REGINFO_ENUM`
+  - 生成:
+    - `namespace CoralNPU { enum { RA = ... } }`
+    - `GPRRegClassID`
+- `GET_REGINFO_MC_DESC`
+  - 生成:
+    - `InitCoralNPUMCRegisterInfo(...)`
+    - `MCRegisterDesc`
+    - 其他 MC 层寄存器描述实现
+
+所以正确结构通常是:
+
+- `CoralNPUTargetDesc.h`
+  - include:
+    - `GET_REGINFO_ENUM`
+    - `GET_INSTRINFO_ENUM`
+    - `GET_SUBTARGETINFO_ENUM`
+- `CoralNPUTargetDesc.cpp`
+  - include:
+    - `GET_REGINFO_MC_DESC`
+    - `GET_INSTRINFO_MC_DESC`
+    - `GET_SUBTARGETINFO_MC_DESC`
+
+如果头文件是空的, 你后面在 `.cpp` 里 include `GET_REGINFO_MC_DESC` 时, 很可能就会遇到:
+
+- `CoralNPU::RA` 未定义
+- `CoralNPU::GPRRegClassID` 未定义
+
+因为“枚举那一层”根本还没有先被声明出来。
+
+你可以把这个关系记成:
+
+- `.h` 先把名字声明出来
+- `.cpp` 再把实现接进来
+
+对当前 `CoralNPU` 来说, 头文件至少应该承担这层作用:
+
+```cpp
+#define GET_REGINFO_ENUM
+#include "CoralNPUGenRegisterInfo.inc"
+
+#define GET_INSTRINFO_ENUM
+#include "CoralNPUGenInstrInfo.inc"
+
+#define GET_SUBTARGETINFO_ENUM
+#include "CoralNPUGenSubtargetInfo.inc"
+```
+
+这也是为什么:
+
+- `CoralNPUGenInstrInfo.inc` 还没生成时
+- `GET_INSTRINFO_ENUM` 往往也要先保持和当前 CMake 状态一致
+
+也就是说, `MCTargetDesc.h` 不只是“一个占位头文件”, 它是:
+
+- 生成枚举声明
+- 给 `.cpp` 里的 MC 描述实现提供前置名字
+
+这条生成链的一部分。
 
 ## `createCoralNPUMCRegisterInfo` 为什么要这样写
 
@@ -417,6 +495,82 @@ TargetRegistry::RegisterMCAsmInfo(TheCoralNPUTarget,
 
 - 把你的 target 拆成 LLVM 认识的几个组件库
 - 让 `LLVMInitializeToyTargetInfo` / `LLVMInitializeToyTarget` / `LLVMInitializeToyTargetMC` 分别落在正确的库里
+
+### `-gen-register-info` 里的 `-info` 和 `GenRegisterInfo.inc` 里的 `Info` 是什么关系
+
+这是 TableGen 初学者很容易混淆的一个点。
+
+先说最短结论:
+
+- `-gen-register-info`
+  - 是 **TableGen 的生成动作名字**
+- `CoralNPUGenRegisterInfo.inc`
+  - 是 **你输出文件的惯用命名**
+
+它们相关, 但不是同一层概念。
+
+#### `-gen-register-info` 是什么意思
+
+这里的 `register-info` 不是文件名, 而是在告诉 `llvm-tblgen`:
+
+- “我要生成寄存器信息相关代码”
+
+也就是说, `-gen-register-info` 回答的是:
+
+- “生成什么内容?”
+
+类似地:
+
+- `-gen-instr-info`
+- `-gen-subtarget`
+- `-gen-asm-writer`
+
+这些也都是“生成动作”。
+
+#### `CoralNPUGenRegisterInfo.inc` 里的 `Gen` / `RegisterInfo` 是什么意思
+
+这是 LLVM 社区长期形成的输出文件命名习惯:
+
+- `Gen`
+  - 表示这是 TableGen 生成文件
+- `RegisterInfo`
+  - 表示文件内容是寄存器信息相关代码
+
+所以这个文件名回答的是:
+
+- “生成出来的文件叫什么?”
+
+#### 为什么经常看起来像一一对应
+
+因为大家通常会按最自然的方式配套命名:
+
+- `-gen-register-info`
+  -> `CoralNPUGenRegisterInfo.inc`
+- `-gen-instr-info`
+  -> `CoralNPUGenInstrInfo.inc`
+- `-gen-subtarget`
+  -> `CoralNPUGenSubtargetInfo.inc`
+
+但要记住:
+
+- 前者是“动作”
+- 后者是“输出文件名”
+
+它们不是语法上自动绑定的, 而是你在 CMake 里自己把它们配对起来。
+
+#### 为什么你之前会出错
+
+你之前的情况本质上就是:
+
+- 生成动作写成了一种
+- 输出文件名写成了另一种
+- `.cpp` 里 include 的又是第三种期待
+
+所以最稳的做法永远是:
+
+1. 先定动作
+2. 再按惯例起输出文件名
+3. 最后让 `#include` 和输出文件名保持一致
 
 ### CMake 里这些名字能不能随便取
 

@@ -45,8 +45,8 @@
 
 ## 建议阅读顺序
 
-1. [00-overview.md](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/tutorial/llvm-toy-backend/00-overview.md)
-2. [01-target-registration.md](/Volumes/wsk/code/llvm-mlir/llvm-project_mips/tutorial/llvm-toy-backend/01-target-registration.md)
+1. [00-overview.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/00-overview.md)
+2. [01-target-registration.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/01-target-registration.md)
 3. [02-td-files-for-coralnpu.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/02-td-files-for-coralnpu.md)
 4. [03-minimal-pipeline.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/03-minimal-pipeline.md)
 5. [04-isel-and-asm.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/04-isel-and-asm.md)
@@ -57,6 +57,23 @@
 10. [09-file-map-and-glossary.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/09-file-map-and-glossary.md)
 
 ## 最实用的任务地图
+
+读教程时, 先记住一个总原则:
+
+- 文档会尽量区分 “当前仓库代码已经是什么样” 和 “推荐你下一步把它整理成什么样”
+
+这是因为你现在的 `CoralNPU` 后端本身还在搭骨架。  
+如果文档只讲理想最终形态, 你会经常遇到:
+
+- 教程里看起来很顺
+- 但一打开当前代码, 文件名、include 关系、CMake 规则还没有完全整理好
+
+所以后面的章节会尽量按这个顺序写:
+
+1. 当前代码状态
+2. 当前报错说明什么
+3. 下一步最小改动目标
+4. 推荐整理后的结构
 
 如果你不是想“系统读一遍”, 而是想“今天先把后端往前推一步”, 最适合先看这张任务地图。
 
@@ -107,6 +124,7 @@
 先看:
 
 - [01-target-registration.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/01-target-registration.md)
+- [02-td-files-for-coralnpu.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/02-td-files-for-coralnpu.md)
 - [08-debugging-llc.md](/Users/kaishaoshao/Desktop/code/llvm-project_mips/tutorial/llvm-toy-backend/08-debugging-llc.md)
 
 ### 阶段 D: 让 codegen 骨架站起来

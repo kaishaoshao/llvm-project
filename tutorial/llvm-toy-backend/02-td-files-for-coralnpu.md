@@ -1,393 +1,432 @@
-# 09 TD Files For CoralNPU
+# 02 TD Files For CoralNPU
 
 ## 学习目标
 
-- 知道 `CoralNPU` 后端通常应该有哪些 `.td` 文件
-- 知道这些 `.td` 文件分别负责描述什么
-- 知道这些文件应该怎么命名、怎么拆分、先写哪个后写哪个
+- 知道当前 `CoralNPU` 代码里已经有哪些 `.td` 文件
+- 知道这些 `.td` 文件当前各自负责什么
+- 知道当前代码和“推荐整理后的结构”有什么差距
+- 知道下一步应该先补哪一个 `.td` 文件, 才能让 `TableGen` 和 `TargetMC` 继续往前走
 
-## 为什么要单独讲 `.td` 文件
+## 这一章怎么读
 
-很多人第一次做 LLVM 后端时, 最容易有两个误区:
+这一章不会只讲 “理想上 LLVM target 应该有哪些 `.td` 文件”。  
+它会同时区分:
 
-- 误区 1: 以为 `.td` 只是“配置文件”
-- 误区 2: 以为先随便写几个 `.td`, 后面再整理
+1. 当前仓库代码已经是什么样
+2. 当前结构哪里还不合理
+3. 你下一步应该先改什么
 
-实际上 `.td` 文件不是普通配置。  
-它们是 LLVM 后端里非常核心的“声明式描述层”, 会直接生成:
+这样你读完之后, 可以直接回到代码里对照着改。
 
-- `GenRegisterInfo.inc`
-- `GenInstrInfo.inc`
-- `GenSubtargetInfo.inc`
-- `GenAsmWriter.inc`
-- `GenDAGISel.inc`
+## 默认视角
 
-所以:
+从这一章开始, 例子默认以:
 
-- `.td` 文件的命名要稳定
-- 拆分方式要清楚
-- 每个文件的职责最好一开始就分明
+- **32 位 CoralNPU**
 
-## 对 `CoralNPU` 最推荐的一套 `.td` 文件
+作为主线来讲。
 
-如果你现在是从零开始搭 `CoralNPU`, 最推荐先按下面这一套来组织。
+也就是说:
 
-### 第一层: target 总入口
+- 例子优先按 32 位 / `DefaultMode`
+- 64 位只在和 32 位不同的地方单独说明
 
-- `CoralNPU.td`
+这样安排是因为你当前真实目标是:
 
-作用:
+- 先让一个最小的 `coralnpu32` 后端站起来
 
-- 声明 target 本身
-- include 其他 `.td` 文件
-- 定义整个 target 的总入口 record
+而不是一开始就把 32/64 两条线同时铺开。
 
-这个文件通常像目录首页。  
-它自己不应该塞太多细节, 更适合做:
+## 当前代码里已经有哪些 `.td` 文件
 
-- 汇总 include
-- 总目标声明
-- 少量全局模式/别名定义
+当前目录:
 
-## `CoralNPU.td` 里通常放什么
+- [CoralNPU.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPU.td)
+- [CoralNPUSubtarget.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPUSubtarget.td)
+- [CoralNPURegisterInfo.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPURegisterInfo.td)
+- [CoralNPUInstrFormats.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPUInstrFormats.td)
+- [CoralNPUInstrInfo.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPUInstrInfo.td)
+- [CoralNPUCallingConv.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPUCallingConv.td)
+- [CoralNPUSchedule.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPUSchedule.td)
 
-建议放:
-
-- `include "llvm/Target/Target.td"`
-- include 其他 `CoralNPU*.td`
-- `def CoralNPU : Target { ... }`
-
-不建议一开始就放太多:
-
-- 寄存器定义
-- 大量指令定义
-- 复杂 pattern
-
-因为这些更适合拆到独立文件。
-
-### 第二层: subtarget / feature
-
-- `CoralNPUSubtarget.td`
-
-作用:
-
-- 定义 CPU 名字
-- 定义 feature
-- 定义 `HwMode`
-- 定义 32/64 位模式或更细的 feature 组合
-
-如果你后面需要:
-
-- `coralnpu32`
-- 不同向量能力
-- 不同张量扩展
-
-这些都应该从这里长出来。
-
-这个文件回答的是:
-
-- “这个 target 有哪些处理器型号和 feature 开关?”
-
-### 第三层: 寄存器体系
-
-- `CoralNPURegisterInfo.td`
-
-作用:
-
-- 定义物理寄存器
-- 定义寄存器别名
-- 定义寄存器类
-- 定义 `ValueTypeByHwMode`
-- 定义 `RegInfoByHwMode`
-
-这个文件回答的是:
-
-- “这个 target 有哪些寄存器?”
-- “哪些寄存器可以放在哪类操作数位置?”
-- “32 位模式和 64 位模式下, 合法值类型和寄存器宽度是什么?”
-
-这是第一批最重要的 `.td` 文件之一。
-
-如果你后面要支持 CoralNPU 风格的:
-
-- 标量寄存器
-- 向量寄存器
-- 可能的 accumulator 寄存器
-
-通常也会从这里继续拆分出来。
-
-### 第四层: 指令编码格式
-
-- `CoralNPUInstrFormats.td`
-
-作用:
-
-- 定义一类指令的公共位域布局
-- 定义基础指令类模板
-- 把“很多条长得差不多的指令”的公共部分抽出来
-
-这个文件回答的是:
-
-- “一条指令的编码壳子长什么样?”
-
-它一般不直接列出很多具体指令, 而是给后面的 `InstrInfo.td` 提供模板。
-
-例如:
-
-- R 型格式
-- I 型格式
-- 向量格式
-- CoralNPU 自己的张量/块操作格式
-
-### 第五层: 具体指令和 pattern
-
-- `CoralNPUInstrInfo.td`
-
-作用:
-
-- 定义具体指令 record
-- 绑定 opcode、操作数、输出输入约束
-- 写 SelectionDAG pattern
-- 定义 pseudo 指令
-
-这个文件回答的是:
-
-- “这个 target 具体有哪些指令?”
-- “遇到某种 DAG, 能选成哪条机器指令?”
-
-通常它会依赖:
-
-- `CoralNPUInstrFormats.td`
-- `CoralNPURegisterInfo.td`
-
-如果你一开始只做最小闭环, 这个文件里只需要先放:
-
-- `ret`
-- `addi` 类最小整数指令
-- `load/store`
-
-不要一开始把 CoralNPU 所有想象中的张量指令都塞进去。
-
-### 第六层: 调用约定
-
-- `CoralNPUCallingConv.td`
-
-作用:
-
-- 声明参数/返回值在寄存器和栈上的分配规则
-
-这个文件回答的是:
-
-- “函数调用时, 参数怎么传?”
-- “返回值怎么回?”
-
-注意:
-
-- 规则常写在 `.td`
-- 真正搬运参数、组装调用序列的行为仍然在 `C++` 的 `LowerFormalArguments` / `LowerCall` / `LowerReturn`
-
-### 第七层: 调度模型
-
-- `CoralNPUSchedule.td`
-
-作用:
-
-- 描述调度资源
-- 描述指令延迟/吞吐
-- 声明处理器调度模型
-
-如果你现在只是做最小 backend, 这个文件可以先很薄。  
-但从命名和组织角度, 最好一开始就预留出来。
-
-## 如果 CoralNPU 后面更复杂, 还可以继续拆哪些 `.td`
-
-当 target 变大以后, 你很可能还会继续拆出:
-
-- `CoralNPUInstrInfoV.td`
-  - 向量指令
-- `CoralNPUInstrInfoTensor.td`
-  - 张量/矩阵相关指令
-- `CoralNPUFeatures.td`
-  - 如果 feature 已经很多, 可以从 `Subtarget.td` 独立出去
-- `CoralNPUCombine.td`
-  - 某些 target combine / pattern 扩展
-
-但这是后话。
-
-如果你当前目标还是“先让骨架站起来”, 不要一开始拆太细。
-
-## 最推荐的命名规则
-
-建议统一按这个模式:
+但当前真正已经开始起作用的, 主要只有前三个:
 
 - `CoralNPU.td`
 - `CoralNPUSubtarget.td`
 - `CoralNPURegisterInfo.td`
-- `CoralNPUInstrFormats.td`
-- `CoralNPUInstrInfo.td`
-- `CoralNPUCallingConv.td`
-- `CoralNPUSchedule.td`
 
-核心规则只有两条:
+`InstrFormats.td` 和 `InstrInfo.td` 目前还基本是占位状态。
 
-1. 前缀统一
-   - 全部都用 `CoralNPU`
-2. 后缀表达职责
-   - `Subtarget`
-   - `RegisterInfo`
-   - `InstrFormats`
-   - `InstrInfo`
-   - `CallingConv`
-   - `Schedule`
+## 当前代码状态和当前卡点
 
-不建议混成:
+如果你现在见到的报错是:
 
-- `CoralRegs.td`
-- `CoralInstr.td`
-- `NPUFmt.td`
+- `Unable to create reg info`
+- `No instructions defined!`
+- `CoralNPUGenInstrInfo.inc file not found`
+- `CoralNPU::RA` / `CoralNPU::GPRRegClassID` 未定义
 
-这种简称式命名, 因为后面一多就很难看出职责边界。
+那这些报错都和 `.td` 层直接相关。
 
-## 这些文件之间通常怎么 include
+当前代码里最关键的几个现实状态是:
 
-最常见的做法是:
+1. [CoralNPU.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPU.td) 还没有真正 include `CoralNPUInstrInfo.td`
+2. [CoralNPUInstrInfo.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPUInstrInfo.td) 里还没有任何真正的 instruction record
+3. [CoralNPU/CMakeLists.txt](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CMakeLists.txt) 目前只生成了:
+   - `CoralNPUGenRegisterInfo.inc`
+   - `CoralNPUGenSubtargetInfo.inc`
+4. `-gen-instr-info` 还没正式接好, 因为一旦打开, 当前代码会立刻报:
+   - `No instructions defined!`
 
-- `CoralNPU.td` 作为总入口 include 其他文件
+所以你现在不能把这一章理解成 “先把所有 `.td` 设计完”, 更应该理解成:
 
-例如:
+- 先把最小声明式骨架接起来
+- 每次只多走一步
+
+## 先回答一个最常见的问题
+
+### `CoralNPU.td` 和 `CoralNPUSubtarget.td` 需要写吗
+
+需要。
+
+而且它们不是“讲概念用的文件”, 而是当前代码真的已经在依赖的文件。
+
+### 为什么不是只写 `CoralNPURegisterInfo.td`
+
+因为 `RegisterInfo.td` 里的:
+
+- `ValueTypeByHwMode`
+- `RegInfoByHwMode`
+
+都依赖前面先定义好的 mode。
+
+而 mode 一般来自:
+
+- `CoralNPUSubtarget.td`
+
+所以合理顺序是:
+
+1. `CoralNPU.td`
+2. `CoralNPUSubtarget.td`
+3. `CoralNPURegisterInfo.td`
+
+## 当前这三个文件各自的职责
+
+### `CoralNPU.td`
+
+它是 TableGen 总入口。
+
+当前代码里它主要负责:
+
+- include 其他 `.td`
+- 定义 `def CoralNPUInstrInfo : InstrInfo;`
+- 定义 `def CoralNPU : Target { let InstructionSet = CoralNPUInstrInfo; }`
+
+当前文件:
+
+```td
+include "llvm/Target/Target.td"
+include "CoralNPUSubtarget.td"
+include "CoralNPURegisterInfo.td"
+def CoralNPUInstrInfo : InstrInfo;
+// include "CoralNPUInstrInfo.td"
+def CoralNPU : Target {
+  let InstructionSet = CoralNPUInstrInfo;
+}
+```
+
+#### 这份当前写法哪里不够合理
+
+最关键的问题是:
+
+- `CoralNPUInstrInfo.td` 被注释掉了
+
+所以当前 `CoralNPU.td` 还没有真正把指令定义接进来。  
+这也是后面 `-gen-instr-info` 报 `No instructions defined!` 的直接原因之一。
+
+#### 当前阶段推荐你把它整理成什么样
 
 ```td
 include "llvm/Target/Target.td"
 
 include "CoralNPUSubtarget.td"
 include "CoralNPURegisterInfo.td"
-include "CoralNPUSchedule.td"
-include "CoralNPUInstrFormats.td"
 include "CoralNPUInstrInfo.td"
-include "CoralNPUCallingConv.td"
+
+def CoralNPUInstrInfo : InstrInfo;
+
+def CoralNPU : Target {
+  let InstructionSet = CoralNPUInstrInfo;
+}
 ```
 
-这个顺序也不是随便排的。
+这里最重要的变化不是 `Target` 本身, 而是:
 
-推荐顺序是:
-
-1. `Subtarget`
-2. `RegisterInfo`
-3. `Schedule`
-4. `InstrFormats`
-5. `InstrInfo`
-6. `CallingConv`
-
-原因是:
-
-- `RegisterInfo` 往往要依赖 mode / feature
-- `InstrFormats` 往往要依赖寄存器类和类型
-- `InstrInfo` 往往要依赖前面所有基础定义
-
-## 这些 `.td` 文件的建议书写顺序
-
-如果你自己动手写, 最推荐按这个顺序:
-
-1. `CoralNPU.td`
-2. `CoralNPUSubtarget.td`
-3. `CoralNPURegisterInfo.td`
-4. `CoralNPUInstrFormats.td`
-5. `CoralNPUInstrInfo.td`
-6. `CoralNPUCallingConv.td`
-7. `CoralNPUSchedule.td`
-
-这个顺序背后的逻辑是:
-
-- 先有 target 总入口
-- 再有 mode / feature
-- 再有寄存器和合法值类型
-- 再有指令模板
-- 最后才有具体指令和调用约定
-
-不要一上来就先写 `InstrInfo.td`, 因为它通常最依赖前面的定义。
-
-## 每个文件最小应该写到什么程度
-
-### `CoralNPU.td`
-
-最小要求:
-
-- target 总入口存在
-- include 结构存在
+- 把 `CoralNPUInstrInfo.td` 接进总入口
 
 ### `CoralNPUSubtarget.td`
 
-最小要求:
+它负责定义:
 
-- 至少有一个默认 CPU
-- 至少有一组最小 feature
+- feature
+- predicate
+- `HwMode`
+- 最小 `ProcessorModel`
+
+当前代码是:
+
+```td
+def Feature32Bit :
+  SubtargetFeature<"32bit", "Is32bit", "ture", "CoralNPU 32Bit support">;
+
+def Feature64Bit :
+  SubtargetFeature<"64bit", "Is32bit", "false", "CoralNPU 64Bit support">;
+
+def Is32Bit : Predicate<"Subtarget->is32Bit()">;
+def Is64Bit : Predicate<"!Subtarget->is32Bit()">;
+
+defvar Coral32Bit = DefaultMode;
+def Coral64Bit : HwMode<"+64bit", [Is64Bit]>;
+
+def : ProcessorModel<"generic", NoSchedModel, []>;
+def : ProcessorModel<"generic-coralnpu64", NoSchedModel, [Feature64Bit]>;
+```
+
+#### 这份当前写法哪里不够合理
+
+这里至少有三点你读代码时要心里有数:
+
+1. `"ture"` 是 typo, 应该是 `"true"`
+2. 当前命名是:
+   - `Feature32Bit`
+   - `Feature64Bit`
+   - `Coral32Bit`
+   - `Coral64Bit`
+   这能工作, 但没有教程里常用的 `RV32/RV64` 那么直观
+3. `SubtargetFeature<..., "Is32bit", ...>` 这一行意味着:
+   - 你后面的 `CoralNPUSubtarget` C++ 类里要有匹配的字段或访问方式
+
+#### 当前阶段应该怎么理解这份文件
+
+先不要急着一次重命名整个文件。  
+你现在最应该理解的是:
+
+- 这份文件已经承担了 “mode / feature / processor” 这层职责
+- `CoralNPURegisterInfo.td` 已经在依赖这里的 `Coral64Bit`
+
+所以当前它虽然不完美, 但不是一个可以随便删掉重来的空壳。
 
 ### `CoralNPURegisterInfo.td`
 
-最小要求:
+它负责定义:
 
-- 至少有一组 GPR
-- 至少有一个返回地址寄存器 `RA`
-- 至少有一个 `RegisterClass`
+- 物理寄存器
+- 寄存器类
+- `XLenVT`
+- `RegInfoByHwMode`
 
-### `CoralNPUInstrFormats.td`
+当前代码是:
 
-最小要求:
+```td
+let Namespace = "CoralNPU" in {
+  class CoralNPUReg<bits<5> Enc, string n, list<string> alt = []>
+    : Register<n> {
+      let HWEncoding{4-0} = Enc;
+      let AltNames = alt;
+    }
 
-- 至少有一类最小整数指令模板
+  class CoralNPUGPRReg<bits<5> Enc, string n, list<string> alt = []>
+    : CoralNPUReg<Enc, n, alt>;
 
-### `CoralNPUInstrInfo.td`
+  let Namespace = "CoralNPU" in {
+    def ZERO : CoralNPUGPRReg<0, "x0",  ["zero"]>;
+    def RA   : CoralNPUGPRReg<0, "x1",  ["ra"]>;
+    def SP   : CoralNPUGPRReg<0, "x2",  ["sp"]>;
+    def A0   : CoralNPUGPRReg<0, "x10", ["a0"]>;
+    def A1   : CoralNPUGPRReg<0, "x11", ["a1"]>;
+  }
 
-最小要求:
+  def XLenVT : ValueTypeByHwMode<[DefaultMode, Coral64Bit], [i32, i64]>;
 
-- 至少能定义几条最小指令
-- 最好能支持 `ret/addi/load/store` 这一类最小闭环
+  def GPR : RegisterClass<"CoralNPU", [XLenVT], 32, (add ZERO, RA, SP, A0, A1)> {
+    let RegInfos = RegInfoByHwMode<
+      [DefaultMode, Coral64Bit],
+      [RegInfo<32,32,32>, RegInfo<64,64,64>]
+    >;
+  }
+}
+```
 
-### `CoralNPUCallingConv.td`
+#### 这份当前写法哪里不够合理
 
-最小要求:
+当前最明显的问题是:
 
-- 先把最基本的整数参数规则占位出来
+1. `RA`、`SP`、`A0`、`A1` 的 `HWEncoding` 还都写成了 `0`
+2. 虽然生成了 `CoralNPUGenRegisterInfo.inc`, 但这些编码值后面迟早要改对
+3. 这里用的是:
+   - `DefaultMode`
+   - `Coral64Bit`
+   所以文档里的 32/64 位例子也应该优先围绕这两个名字来讲
 
-### `CoralNPUSchedule.td`
+## 当前阶段最小合理目标
 
-最小要求:
+对你现在的 `CoralNPU` 代码来说, 这一章最现实的目标不是 “把所有 `.td` 设计完”, 而是:
 
-- 可以先只有 `NoSchedModel`
+1. `CoralNPU.td` 真正 include `CoralNPUInstrInfo.td`
+2. `CoralNPUInstrInfo.td` 里至少有一条真实指令
+3. `CoralNPU/CMakeLists.txt` 里能够打开:
+   - `tablegen(LLVM CoralNPUGenInstrInfo.inc -gen-instr-info)`
+4. `MCTargetDesc/CoralNPUTargetDesc.h` 和 `.cpp` 能正确 include:
+   - `GET_INSTRINFO_ENUM`
+   - `GET_INSTRINFO_MC_DESC`
 
-## 这一章最想帮你建立的直觉
+你可以把这 4 件事当成当前 `.td` 阶段最重要的任务。
 
-这些 `.td` 文件不是“分得越细越高级”, 而是:
+## 为什么先支持一条 `ret` 指令
 
-- 每个文件对应一类稳定职责
-- 先把职责边界分清楚
-- 后面再按复杂度继续细拆
+因为当前 `-gen-instr-info` 报的是:
 
-如果你当前只是从 `CoralNPU` 空壳往前搭, 最稳的起点就是:
+- `No instructions defined!`
 
-- `CoralNPU.td`
-- `CoralNPUSubtarget.td`
-- `CoralNPURegisterInfo.td`
-- `CoralNPUInstrFormats.td`
-- `CoralNPUInstrInfo.td`
+这说明问题不是:
 
-先把这一套建起来, 再继续扩展。
+- 指令太少
 
-## 你现在最适合先做什么
+而是:
 
-如果你已经卡在:
+- **一条都没有**
 
-- `createCoralNPUMCRegisterInfo`
-- `InitCoralNPUMCRegisterInfo`
-- `GenRegisterInfo.inc`
+所以当前最合理的第一条指令就是:
 
-那下一步最适合先补的 `.td` 文件就是:
+- `RET`
 
-- `CoralNPURegisterInfo.td`
+原因很简单:
 
-因为它会直接决定:
+1. 它最容易解释
+2. 它不需要一开始就引入复杂算术或访存语义
+3. 它足够让 `InstrInfo.td` 不再是空壳
 
-- `MCRegisterInfo`
-- `RegisterClass`
-- 很多后续 `Gen*.inc`
-  能不能生成出来
+## 一个最小 `ret` 目标应该涉及哪些文件
+
+当前最小路径只需要你先整理三处:
+
+1. [CoralNPU.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPU.td)
+2. [CoralNPUInstrFormats.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPUInstrFormats.td)
+3. [CoralNPUInstrInfo.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPUInstrInfo.td)
+
+### `CoralNPUInstrFormats.td` 第一版最小示例
+
+```td
+class CoralNPUInst : Instruction {
+  let Namespace = "CoralNPU";
+  let Size = 4;
+}
+```
+
+它当前只回答一件事:
+
+- “CoralNPU 的最小指令模板长什么样”
+
+第一版先不要急着把位段编码、操作数字段全塞进来。
+
+### `CoralNPUInstrInfo.td` 第一版最小示例
+
+```td
+include "CoralNPUInstrFormats.td"
+
+def RET : CoralNPUInst {
+  let OutOperandList = (outs);
+  let InOperandList = (ins);
+  let AsmString = "ret";
+  let Pattern = [];
+}
+```
+
+#### 为什么这条 `RET` 现在就够用
+
+因为你当前最先要解决的问题不是:
+
+- `ret` 如何从 LLVM IR 正确 lowering 下来
+
+而是:
+
+- 让 `-gen-instr-info` 至少看到一条真正的 instruction record
+
+只要 `RET` 被 TableGen 认成一条指令, 你就已经能从:
+
+- `No instructions defined!`
+
+往后推进一步。
+
+## CMake 和 `tablegen(...)` 要和 `.td` 同步
+
+当前 [CoralNPU/CMakeLists.txt](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CMakeLists.txt) 里, `InstrInfo` 那行还是注释状态:
+
+```cmake
+# tablegen(LLVM CoralNPUGenInstrInfo.inc -gen-instr-info)
+```
+
+这和当前代码状态是匹配的, 因为:
+
+- 一旦打开
+- 如果 `CoralNPUInstrInfo.td` 里还没有指令
+- 就会立刻报:
+  - `No instructions defined!`
+
+所以正确顺序不是先硬开 CMake, 而是:
+
+1. 先在 `InstrInfo.td` 里加一条最小 `RET`
+2. 再打开 `-gen-instr-info`
+3. 再处理 `MCTargetDesc.h/.cpp` 里的 `GET_INSTRINFO_*`
+
+## `tablegen` 动作名和输出文件名要分开理解
+
+这里最容易混淆的是:
+
+- `-gen-register-info`
+- `CoralNPUGenRegisterInfo.inc`
+
+前者是:
+
+- `llvm-tblgen` 的生成动作名
+
+后者是:
+
+- 你让 CMake 输出的文件名
+
+同理:
+
+- `CoralNPUGenSubtargetInfo.inc` 对应的是 `-gen-subtarget`
+- 不是 `-gen-subtarget-info`
+
+原因不是语义上 “不需要 info”, 而是:
+
+- LLVM 这个 emitter 的合法名字本来就叫 `subtarget`
+
+所以这里不要自己猜动作名, 直接记住这几个常用对应关系:
+
+- `-gen-register-info` -> `CoralNPUGenRegisterInfo.inc`
+- `-gen-instr-info` -> `CoralNPUGenInstrInfo.inc`
+- `-gen-subtarget` -> `CoralNPUGenSubtargetInfo.inc`
+
+## 你现在最推荐的实际推进顺序
+
+如果你现在就在改代码, 最稳的顺序是:
+
+1. 取消 [CoralNPU.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPU.td) 里对 `CoralNPUInstrInfo.td` 的注释
+2. 给 [CoralNPUInstrFormats.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPUInstrFormats.td) 加最小 `CoralNPUInst`
+3. 给 [CoralNPUInstrInfo.td](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CoralNPUInstrInfo.td) 加最小 `RET`
+4. 打开 [CoralNPU/CMakeLists.txt](/Users/kaishaoshao/Desktop/code/llvm-project_mips/llvm/lib/Target/CoralNPU/CMakeLists.txt) 里的:
+   - `tablegen(LLVM CoralNPUGenInstrInfo.inc -gen-instr-info)`
+5. 再回头修改 `MCTargetDesc/CoralNPUTargetDesc.h` 和 `.cpp`
+
+## 这一章完成后的验收标准
+
+这一章做完, 当前最实际的验收标准不是 “后端已经能生成 `ret`”, 而是:
+
+1. `CoralNPU.td` 的 include 结构已经清楚
+2. `Subtarget.td` 和 `RegisterInfo.td` 的职责你能分清
+3. `CoralNPUInstrInfo.td` 不再是空壳
+4. `-gen-instr-info` 不再报 `No instructions defined!`
+
+做到这里, 你才算真正开始拥有一套能继续长大的 `.td` 骨架。
