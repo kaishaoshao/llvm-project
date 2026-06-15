@@ -4,7 +4,7 @@ set(LLVM_TARGET_DEFINITIONS CoralNPU.td)
 
 #生成Gen***.inc
 tablegen(LLVM CoralNPUGenRegisterInfo.inc -gen-register-info)
-# tablegen(LLVM CoralNPUGenInstrInfo.inc -gen-instr-info)
+tablegen(LLVM CoralNPUGenInstrInfo.inc -gen-instr-info)
 tablegen(LLVM CoralNPUGenSubtargetInfo.inc -gen-subtarget)
 
 add_public_tablegen_target(CoralNPUCommonTableGen)

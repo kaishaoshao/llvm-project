@@ -7,8 +7,8 @@
 #define GET_REGINFO_ENUM
 #include "CoralNPUGenRegisterInfo.inc"
 
-// #define GET_INSTRINFO_ENUM
-// #include "CoralNPUGenInstrInfo.inc"
+#define GET_INSTRINFO_ENUM
+#include "CoralNPUGenInstrInfo.inc"
 
 #define GET_SUBTARGETINFO_ENUM
 #include "CoralNPUGenSubtargetInfo.inc"

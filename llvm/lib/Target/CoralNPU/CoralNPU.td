@@ -8,8 +8,7 @@ include "CoralNPUSubtarget.td"
 include "CoralNPURegisterInfo.td"
 
 // 定义：这个 target 的指令系统入口名字是什么
-def CoralNPUInstrInfo : InstrInfo;
-// include "CoralNPUInstrInfo.td"
+include "CoralNPUInstrInfo.td"
 
 
 def CoralNPU : Target {

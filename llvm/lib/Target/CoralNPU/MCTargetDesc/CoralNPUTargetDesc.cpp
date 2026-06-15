@@ -12,8 +12,8 @@
 #include "CoralNPUTargetDesc.h"
 
 // 生成InitCoralNPUMCInsterInfo
-// #define GET_INSTRINFO_MC_DESC
-// #include "CoralNPUGenInstrInfo.inc"
+#define GET_INSTRINFO_MC_DESC
+#include "CoralNPUGenInstrInfo.inc"
 
 // 生成InitCoralNPUMCRegisterInfo
 #define GET_SUBTARGETINFO_MC_DESC
@@ -78,8 +78,8 @@ extern "C" void LLVMInitializeCoralNPUTargetMC() {
                                     createCoralNPUMCRegisterInfo);
   TargetRegistry::RegisterMCInstrInfo(TheCoralNPUTarget,
                                       createCoralNPUMCInstrInfo);
-  // TargetRegistry::RegisterMCSubtargetInfo(TheCoralNPUTarget,
-  //                                         createCoralNPUMCAsmInfo);
+  TargetRegistry::RegisterMCSubtargetInfo(TheCoralNPUTarget,
+                                          createCoralNPUMCSubtargetInfo);
   TargetRegistry::RegisterMCAsmInfo(TheCoralNPUTarget,
                                   createCoralNPUMCAsmInfo);
 }
