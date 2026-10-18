@@ -1,0 +1,363 @@
+# 1021: (a) RAISA-gated LoopStrengthReduce skip, (b) tx8 simt2simd uniform
+# lane byte offset.  Replay: (a) on pristine rc1 TargetPassConfig.cpp,
+# (b) on the 1020 state (= wt-merge/src + 1019 + 1020).
+
+--- a/llvm/lib/CodeGen/TargetPassConfig.cpp
++++ b/llvm/lib/CodeGen/TargetPassConfig.cpp
+@@ -95,6 +95,22 @@
+     cl::desc("Disable PostRA Machine Sinking"));
+ static cl::opt<bool> DisableLSR("disable-lsr", cl::Hidden,
+     cl::desc("Disable Loop Strength Reduction Pass"));
++// RAISA (fork) device targets: the fork's `simt2simd` pass recognises a lane
++// address only while the base pointer is still `tid`-rooted.  Upstream LSR
++// rewrites an unrolled access chain into a pointer induction variable
++// (`phi ptr` + constant-offset GEPs), which hides that base, so the pass can no
++// longer vectorise the loop and the `read.reg.*` intrinsics survive into ISel
++// ("Don't know how to custom type legalize this intrinsic!").  The vendor's
++// forked LoopStrengthReduce does NOT rewrite that chain for RAISA (verified:
++// byte-identical LSR input, identical output under any other triple); we
++// reproduce that observable behaviour by not running LSR for this triple.
++// This is a lossy stopgap (one missed optimisation), not a faithful
++// reconstruction -- see docs/compiler/fork-source/reconstruction/README.md.
++// Escape hatch for A/B: -riscv-raisa-lsr.
++static cl::opt<bool> EnableLSRForRaisa(
++    "riscv-raisa-lsr", cl::Hidden,
++    cl::desc("Run Loop Strength Reduction for RAISA device targets"),
++    cl::init(false));
+ static cl::opt<bool> DisableConstantHoisting("disable-constant-hoisting",
+     cl::Hidden, cl::desc("Disable ConstantHoisting"));
+ static cl::opt<bool> DisableCGP("disable-cgp", cl::Hidden,
+@@ -834,7 +850,9 @@
+     addPass(createBasicAAWrapperPass());
+ 
+     // Run loop strength reduction before anything else.
+-    if (!DisableLSR) {
++    // (Skipped for RAISA device targets, see EnableLSRForRaisa above.)
++    if (!DisableLSR &&
++        !(TM->getTargetTriple().isRaisa() && !EnableLSRForRaisa)) {
+       addPass(createCanonicalizeFreezeInLoopsPass());
+       addPass(createLoopStrengthReducePass());
+       if (EnableLoopTermFold)
+--- a/llvm/lib/Target/RISCV/TX8TransformSIMTToSIMD.cpp
++++ b/llvm/lib/Target/RISCV/TX8TransformSIMTToSIMD.cpp
+@@ -330,6 +330,26 @@
+   return GEP->getOperand(1) == Tid;
+ }
+ 
++/// True if \p V is the lane id or (transitively) derived from it.  Used to tell
++/// a *uniform* byte offset (a loop-carried induction variable) apart from a
++/// per-lane one, which would make the address lane-dependent in a way no
++/// attested shape covers.  Constants and parameters (the packed block) are
++/// uniform by construction; the visited set cuts the phi/back-edge cycles.
++static bool dependsOnTid(const Value *V, const Value *Tid,
++                         SmallPtrSetImpl<const Value *> &Visited) {
++  if (V == Tid)
++    return true;
++  if (isa<Constant>(V) || isa<Argument>(V))
++    return false;
++  if (!Visited.insert(V).second)
++    return false;
++  if (const auto *I = dyn_cast<Instruction>(V))
++    for (const Value *Op : I->operands())
++      if (dependsOnTid(Op, Tid, Visited))
++        return true;
++  return false;
++}
++
+ /// Decompose a *parameter-pointer* lane address into the byte pointer whose
+ /// per-lane address is `Base + L * <element bytes> + Off`.
+ ///
+@@ -340,8 +360,18 @@
+ /// The vendored pass turns the first into a unit-stride `vle` from `%p` (the
+ /// lanes are contiguous) and every other one into a `vluxei.sync` gather whose
+ /// per-lane index vector is `vslh(Base_low + lane_bytes + Off, Base_high)`.
++///
++/// A *third* shape is what survives in a loop the fork did not fully unroll
++/// (`control_uniform_loop`): the byte offset is a **uniform, loop-carried**
++/// scalar rather than a constant, so it is returned through \p VarOff instead:
++///   %invariant.gep = getelementptr i8, ptr %b, i32 512
++///   %gep           = getelementptr i8, ptr %invariant.gep, i32 %inc   ; %inc = k*512
++/// The vendor adds it to the lane address vector inside the loop
++/// (`vadd.vx v26, v10, a4`) before the `vslh`/`vluxei.sync` pair, which is what
++/// the rewrite emits for a non-null \p VarOff.
+ static bool laneAddrOf(const Value *Ptr, const Value *Tid, Value *&Base,
+-                       uint64_t &Off) {
++                       uint64_t &Off, Value *&VarOff) {
++  VarOff = nullptr;
+   const auto *GEP = dyn_cast<GetElementPtrInst>(Ptr);
+   if (!GEP)
+     return false;
+@@ -350,19 +380,36 @@
+     Off = 0;
+     return true;
+   }
+-  // A constant byte offset on top of another lane address.  Only `i8` GEPs are
+-  // folded (`getelementptr i32, ptr %b, i32 C` would need the element size).
++  // A byte offset on top of another lane address.  Only `i8` GEPs are folded
++  // (`getelementptr i32, ptr %b, i32 C` would need the element size).
+   if (GEP->getNumOperands() == 2 &&
+       GEP->getSourceElementType()->isIntegerTy(8)) {
+-    const auto *C = dyn_cast<ConstantInt>(GEP->getOperand(1));
+-    if (!C)
+-      return false;
+     Value *Inner = nullptr;
+     uint64_t InnerOff = 0;
+-    if (!laneAddrOf(GEP->getPointerOperand(), Tid, Inner, InnerOff))
++    Value *InnerVar = nullptr;
++    if (!laneAddrOf(GEP->getPointerOperand(), Tid, Inner, InnerOff, InnerVar))
++      return false;
++    // A constant byte offset commutes with a variable one, so it is simply
++    // accumulated: the epilogue of the not-fully-unrolled loop is
++    // `%15 = gep %11, %35` followed by `%arrayidx.epil.1 = gep %15, 512`.
++    if (const auto *C = dyn_cast<ConstantInt>(GEP->getOperand(1))) {
++      Base = Inner;
++      Off = InnerOff + C->getSExtValue();
++      VarOff = InnerVar;
++      return true;
++    }
++    // A uniform non-constant byte offset: `%inc = shl i32 %k.010, 9` of the
++    // not-fully-unrolled loop.  Only one such term is attested, and it must not
++    // itself be lane-dependent.
++    Value *V = GEP->getOperand(1);
++    if (InnerVar || !V->getType()->isIntegerTy())
++      return false;
++    SmallPtrSet<const Value *, 8> Visited;
++    if (dependsOnTid(V, Tid, Visited))
+       return false;
+     Base = Inner;
+-    Off = InnerOff + C->getSExtValue();
++    Off = InnerOff;
++    VarOff = V;
+     return true;
+   }
+   return false;
+@@ -816,6 +863,12 @@
+   //   Vectorised  the subset that becomes an RVV vector
+   //   Uniform     the subset that stays scalar and is splatted at the store
+   SmallPtrSet<Value *, 16> WillMap, Vectorised, Uniform;
++  // Set when a *gather* of the parameter-pointer lane family is admitted.  That
++  // family rebuilds each lane's address from `vid`, so the lane id has to be
++  // materialised even when it is only ever used as an index -- which is the
++  // case in `control_uniform_loop`, and why the vendor's own IR carries an
++  // otherwise unused `vid.v`.
++  bool NeedsLaneOffset = false;
+   for (Argument &A : F.args())
+     Uniform.insert(&A);  // the packed parameter block
+   // The classification below runs to a **fixpoint**, not as a single sweep:
+@@ -860,6 +913,26 @@
+         Pending = true;
+       }
+       if (Pending) {
++        // A phi can sit in a *closed* cycle that the incoming-value
++        // classification can never resolve, because the phi and its back-edge
++        // value are each other's only undecided operand.  Two such cycles exist
++        // in the loop the fork did not fully unroll:
++        //   uniform:  %k = phi [0], [%inc]  with  %inc = add %k, 8
++        //   lane:     %v = phi [0], [%add]  with  %add = add <lane load>, %v
++        // Both are broken the same way, structurally: a phi is uniform when it
++        // is not derived from the lane id, and a lane value when it is (the
++        // accumulator is fed by a tid-addressed load).  Anything else -- in
++        // particular a phi that is not of the lane type -- still bails.
++        if (PN->getType() == ElemTy) {
++          SmallPtrSet<const Value *, 8> Visited;
++          bool LaneDerived = dependsOnTid(PN, Tid, Visited);
++          WillMap.insert(PN);
++          if (LaneDerived)
++            Vectorised.insert(PN);
++          else
++            Uniform.insert(PN);
++          continue;
++        }
+         Unclassified = true;
+         continue;
+       }
+@@ -883,13 +956,18 @@
+       }
+       Value *LaneBase = nullptr;
+       uint64_t LaneOff = 0;
+-      // A tid-indexed lane load (or one carrying a constant byte offset on top
+-      // of it).  The offset chunks are gathered with an `i32`-spelled `vslh`,
+-      // so that half of the family is limited to 32-bit lanes; the offset-0
+-      // chunk is a plain `vle` and applies to every element type.
++      Value *LaneVarOff = nullptr;
++      // A tid-indexed lane load (or one carrying a byte offset on top of it,
++      // either constant or a uniform loop-carried scalar).  The offset chunks
++      // are gathered with an `i32`-spelled `vslh`, so that half of the family
++      // is limited to 32-bit lanes; the offset-0 chunk is a plain `vle` and
++      // applies to every element type.
+       if (LI->getType() == ElemTy &&
+-          laneAddrOf(LI->getPointerOperand(), Tid, LaneBase, LaneOff) &&
+-          (LaneOff == 0 || ElemTy->isIntegerTy(32))) {
++          laneAddrOf(LI->getPointerOperand(), Tid, LaneBase, LaneOff,
++                     LaneVarOff) &&
++          ((LaneOff == 0 && !LaneVarOff) || ElemTy->isIntegerTy(32))) {
++        if (LaneOff != 0 || LaneVarOff)
++          NeedsLaneOffset = true;  // a gather: the lane address needs `vid`
+         WillMap.insert(LI);
+         Vectorised.insert(LI);
+         continue;
+@@ -905,6 +983,7 @@
+         Vectorised.insert(LI);
+         continue;
+       }
++      LLVM_DEBUG(dbgs() << "simt2simd: unclassified load: " << I << "\n");
+       Unclassified = true;
+       continue;
+     }
+@@ -1062,6 +1141,7 @@
+     // Not understood *yet* -- but its operands may only be decided by a later
+     // sweep (a phi fed by this very block), so this is not fatal until a whole
+     // sweep classifies nothing new (see the fixpoint check below).
++    LLVM_DEBUG(dbgs() << "simt2simd: unclassified: " << I << "\n");
+     Unclassified = true;
+    }
+   }
+@@ -1094,9 +1174,10 @@
+         continue;  // tile-memory gather (checked in the first loop)
+       Value *LaneBase = nullptr;
+       uint64_t LaneOff = 0;
++      Value *LaneVarOff = nullptr;
+       if (cast<LoadInst>(I).getType() != ElemTy ||
+-          !laneAddrOf(I.getOperand(0), Tid, LaneBase, LaneOff) ||
+-          (LaneOff != 0 && !ElemTy->isIntegerTy(32)))
++          !laneAddrOf(I.getOperand(0), Tid, LaneBase, LaneOff, LaneVarOff) ||
++          ((LaneOff != 0 || LaneVarOff) && !ElemTy->isIntegerTy(32)))
+         return false;
+       continue;
+     }
+@@ -1287,7 +1368,12 @@
+   };
+   auto LaneAddressBase = [&](Value *Base, Instruction *At) -> LaneAddr {
+     auto Found = LaneAddrs.find(Base);
+-    if (Found != LaneAddrs.end())
++    // The chain is inserted ahead of its first use, so it may only be reused
++    // within that same block: a loop the fork did not fully unroll has gathers
++    // in `for.body` *and* in each epilogue block, and a value created inside the
++    // loop does not dominate the epilogue.
++    if (Found != LaneAddrs.end() &&
++        cast<Instruction>(Found->second.Lo)->getParent() == At->getParent())
+       return Found->second;
+     IRBuilder<> IB(At);
+     Value *LaneOff = nullptr;
+@@ -1309,8 +1395,9 @@
+     LaneAddrs[Base] = A;
+     return A;
+   };
+-  /// The per-lane index vector of the chunk at byte offset \p ByteOffset.
+-  auto LaneIndex = [&](const LaneAddr &A, uint64_t ByteOffset,
++  /// The per-lane index vector of the chunk at byte offset
++  /// \p ByteOffset plus the uniform \p VarOffset (may be null).
++  auto LaneIndex = [&](const LaneAddr &A, uint64_t ByteOffset, Value *VarOffset,
+                        Instruction *At) -> Value * {
+     IRBuilder<> IB(At);
+     Value *Low = A.Lo;
+@@ -1318,6 +1405,19 @@
+       Low = IB.CreateCall(GetVADD(), {UndefValue::get(VecTy), Low,
+                                       IB.getInt32(ByteOffset),
+                                       IB.getInt64(SIMT_LANES)});
++    if (VarOffset) {
++      // The vendor keeps the constant-offset lane vectors in the preheader and
++      // adds the *loop-carried* scalar to them inside the loop:
++      //   loop: slli a4, a1, 9      ; %inc = k*512
++      //         vadd.vx v26, v10, a4 ; lane address + uniform byte offset
++      //         vslh.vx v30, v26, <Base_high>
++      //         vluxei64.sync.v v27, (zero), v30
++      Value *V = VarOffset;
++      if (V->getType() != Int32Ty)
++        V = IB.CreateSExtOrTrunc(V, Int32Ty);
++      Low = IB.CreateCall(GetVADD(), {UndefValue::get(VecTy), Low, V,
++                                      IB.getInt64(SIMT_LANES)});
++    }
+     return IB.CreateCall(GetVSLH(), {UndefValue::get(IdxTy), Low, A.Hi,
+                                      IB.getInt64(SIMT_LANES)});
+   };
+@@ -1325,6 +1425,11 @@
+   // The all-zero lane vector the reduction lowering ORs against, materialised
+   // lazily at the top of the entry block (see the reduce family below).
+   Value *Zero = nullptr;
++  // The `read.reg.tid.x` call is erased only at the very end: a gather's
++  // tid-indexed GEP is reached by the dead-GEP sweep, *after* the `ToErase`
++  // list has been drained, so erasing the call with the list would destroy a
++  // value that still has a use.
++  CallInst *KernelTid = nullptr;
+   // Instructions are erased only after every replacement has been built: the
+   // scalar values are still referenced by later instructions while the loop
+   // runs, so erasing eagerly would leave dangling operands behind (and made
+@@ -1383,9 +1488,11 @@
+       }
+       Value *LaneBase = nullptr;
+       uint64_t LaneOff = 0;
++      Value *LaneVarOff = nullptr;
+       if (LI->getType() != ElemTy ||
+-          !laneAddrOf(LI->getPointerOperand(), Tid, LaneBase, LaneOff) ||
+-          (LaneOff != 0 && !ElemTy->isIntegerTy(32)))
++          !laneAddrOf(LI->getPointerOperand(), Tid, LaneBase, LaneOff,
++                      LaneVarOff) ||
++          ((LaneOff != 0 || LaneVarOff) && !ElemTy->isIntegerTy(32)))
+         continue;  // parameter-extraction load, not a lane load
+       // The two halves of the base pointer are materialised even for the
+       // offset-0 chunk (the vendor does the same: the later chunks reuse the
+@@ -1393,11 +1500,11 @@
+       LaneAddr A = LaneAddressBase(LaneBase, LI);
+       EmitSetMemAlloc(LI);
+       IRBuilder<> IB(LI);
+-      if (LaneOff == 0) {
++      if (LaneOff == 0 && !LaneVarOff) {
+         ToVec[LI] = IB.CreateCall(GetVLE(), {UndefValue::get(VecTy), LaneBase,
+                                              IB.getInt64(SIMT_LANES)});
+       } else {
+-        Value *Idx = LaneIndex(A, LaneOff, LI);
++        Value *Idx = LaneIndex(A, LaneOff, LaneVarOff, LI);
+         ToVec[LI] = IB.CreateCall(GetVLUXEI(),
+                                   {UndefValue::get(VecTy), NullBase, Idx,
+                                    IB.getInt64(SIMT_LANES)});
+@@ -1620,15 +1727,17 @@
+       if (!RM->Callee) {
+         // Per-lane value (`tid.x`): becomes `vid`, but only if it is used for
+         // something other than as a lane index -- the fadd/fmax cells only use
+-        // it as the index and their vendor IR has no `vid`.
+-        if (usedAsValue(CI)) {
++        // it as the index and their vendor IR has no `vid`.  The exception is
++        // the gather family, which rebuilds each lane address from `vid` and
++        // therefore needs it even for an index-only `tid` (NeedsLaneOffset).
++        if (usedAsValue(CI) || NeedsLaneOffset) {
+           FunctionCallee VID = declareRVV(
+               M, ("llvm.riscv.vid." + VT + ".i64").c_str(),
+               FunctionType::get(VecTy, {VecTy, Int64Ty}, false));
+           ToVec[CI] = IB.CreateCall(VID, {UndefValue::get(VecTy),
+                                           IB.getInt64(SIMT_LANES)});
+         }
+-        ToErase.push_back(CI);
++        KernelTid = CI;
+         continue;
+       }
+       SmallVector<Type *, 1> Params;
+@@ -1903,10 +2012,24 @@
+       return false;  // a kept instruction still refers to the scalar phi
+     Old->eraseFromParent();
+   }
+-  for (BasicBlock &BB : F)
+-    for (Instruction &I : make_early_inc_range(BB))
+-      if (I.use_empty() && isa<GetElementPtrInst>(I))
+-        I.eraseFromParent();
++  // Dead GEPs are dropped to a fixpoint: a lane address is a *chain*
++  // (`%1 = gep %p, %tid` <- `%invariant.gep = gep %1, C` <- `%arrayidx = gep
++  // %invariant.gep, %idx`), so a single program-order sweep leaves the inner
++  // GEPs alive for one more round.
++  for (bool Again = true; Again;) {
++    Again = false;
++    for (BasicBlock &BB : F)
++      for (Instruction &I : make_early_inc_range(BB))
++        if (I.use_empty() && isa<GetElementPtrInst>(I)) {
++          I.eraseFromParent();
++          Again = true;
++        }
++  }
++  // With every lane address gone the lane-id call is dead.  It must not survive
++  // into ISel: the fork has no legalisation for `read.reg.tid.x` outside this
++  // pass ("Don't know how to custom type legalize this intrinsic!").
++  if (KernelTid && KernelTid->getParent() && KernelTid->use_empty())
++    KernelTid->eraseFromParent();
+ 
+   return true;
+ }

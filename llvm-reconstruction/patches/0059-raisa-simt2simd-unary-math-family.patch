@@ -1,0 +1,66 @@
+--- a/llvm/lib/Target/RISCV/TX8TransformSIMTToSIMD.cpp
++++ b/llvm/lib/Target/RISCV/TX8TransformSIMTToSIMD.cpp
+@@ -623,15 +623,32 @@
+ 
+     // Only the shapes whose vendor IR has been reproduced exactly are emitted;
+     // everything else leaves the function untouched (see the pass comment).
++    // Declaration shapes, verbatim from recon/simt2simd/*.after.ir:
++    //   vfadd   (undef, a, b, i64 frm,    i64 128)   -> `.VT.VT.i64`
++    //   vfmax   (undef, a, b,             i64 128)   -> `.VT.VT.i64`
++    //   vcos/vsin/vlog2/vpow2/vfrsqrt7
++    //           (undef, x,    i64 7,     i64 128)   -> `.VT.i64`
+     const char *BaseName = nullptr;
++    bool UnaryPolicy = false;
+     switch (Dst) {
+     case Intrinsic::riscv_vfadd: BaseName = "llvm.riscv.vfadd"; break;
+     case Intrinsic::riscv_vfmax: BaseName = "llvm.riscv.vfmax"; break;
+-    default: return false;
++    case Intrinsic::riscv_vcos: BaseName = "llvm.riscv.vcos"; UnaryPolicy = true; break;
++    case Intrinsic::riscv_vsin: BaseName = "llvm.riscv.vsin"; UnaryPolicy = true; break;
++    case Intrinsic::riscv_vlog2: BaseName = "llvm.riscv.vlog2"; UnaryPolicy = true; break;
++    case Intrinsic::riscv_vpow2: BaseName = "llvm.riscv.vpow2"; UnaryPolicy = true; break;
++    case Intrinsic::riscv_vfrsqrt7:
++      BaseName = "llvm.riscv.vfrsqrt7";
++      UnaryPolicy = true;
++      break;
++    default:
++      return false;
+     }
+     IRBuilder<> IB(CI);
+     SmallVector<Value *, 6> Args;
++    SmallVector<Type *, 6> Params;
+     Args.push_back(UndefValue::get(VecTy));
++    Params.push_back(VecTy);  // undef passthru
+     for (unsigned i = 0, e = CI->arg_size(); i != e; ++i) {
+       Value *A = CI->getArgOperand(i);
+       if (isa<MetadataAsValue>(A))  // rounding / fpexcept metadata
+@@ -640,14 +657,24 @@
+       if (It == ToVec.end())
+         return false;
+       Args.push_back(It->second);
++      Params.push_back(VecTy);
+     }
+-    SmallVector<Type *, 6> Params = {VecTy, VecTy, VecTy};
+-    std::string Name = BaseName + ("." + VT + "." + VT + ".i64");
+-    if (Dst == Intrinsic::riscv_vfadd) {
+-      // `vfadd.nxv2f32.nxv2f32.i64(undef, a, b, i64 frm, i64 vl)`
++    // The overloaded-name suffix lists the intrinsic's overloaded types, which
++    // recon/simt2simd/spec.tsv pins down: the unary math family only overloads
++    // the result (`vcos.nxv2f32.i64`), the binary family also overloads an
++    // operand (`vfadd.nxv2f32.nxv2f32.i64`).
++    std::string Name = BaseName;
++    if (UnaryPolicy)
++      Name += "." + VT;
++    else
++      Name += "." + VT + "." + VT;
++    Name += ".i64";
++    // vfadd carries the rounding mode; vcos/vsin/vlog2/vpow2 carry the RAISA
++    // policy constant (7) in the same slot.  vfrsqrt7 carries neither
++    // (spec.tsv: `vfrsqrt7.nxv2f32.i64:128`).
++    if (Dst == Intrinsic::riscv_vfadd || (UnaryPolicy && Dst != Intrinsic::riscv_vfrsqrt7)) {
+       Args.push_back(IB.getInt64(*Extra));
+       Params.push_back(Int64Ty);
+-      Name = BaseName + ("." + VT + "." + VT + ".i64");
+     }
+     Args.push_back(IB.getInt64(SIMT_LANES));
+     Params.push_back(Int64Ty);

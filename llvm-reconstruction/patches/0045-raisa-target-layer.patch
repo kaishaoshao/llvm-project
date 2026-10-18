@@ -1,0 +1,83 @@
+--- a/clang/lib/Basic/Targets/RISCV.h
++++ b/clang/lib/Basic/Targets/RISCV.h
+@@ -244,7 +244,18 @@
+       : RISCVTargetInfo(Triple, Opts) {
+     LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
+     IntMaxType = Int64Type = SignedLong;
+-    resetDataLayout("e-m:e-p:64:64-i64:64-i128:128-n32:64-S128");
++    // RAISA device targets use the fork's RPU data layout, byte-identical to
++    // the vendor's `target datalayout` in `-x raisa` device IR
++    // (wt-raisa-be/recon/simt2simd/*.before.ir): 32-bit GEP index,
++    // 32-bit pointers in address spaces 3/4 (L0A/L0W shared) and allocas in
++    // address space 5.  Only the RAISA OS triple is affected; plain
++    // riscv64-{linux,unknown}-* keeps the upstream layout.
++    if (getTriple().isRaisa())
++      resetDataLayout(
++          "e-m:e-p:64:64:64:32-p3:32:32:32:32-p4:32:32:32:32-"
++          "i64:64-i128:128-n32:64-S128-A5");
++    else
++      resetDataLayout("e-m:e-p:64:64-i64:64-i128:128-n32:64-S128");
+   }
+ 
+   bool setABI(const std::string &Name) override {
+--- a/llvm/lib/Target/RISCV/RISCVTargetMachine.cpp
++++ b/llvm/lib/Target/RISCV/RISCVTargetMachine.cpp
+@@ -164,6 +164,13 @@
+     if (ABIName == "lp64e")
+       return "e-m:e-p:64:64-i64:64-i128:128-n32:64-S64";
+ 
++    // RAISA device targets: the fork's RPU layout (32-bit GEP index, 32-bit
++    // pointers in AS3/AS4, allocas in AS5).  Must match
++    // clang/lib/Basic/Targets/RISCV.h exactly.
++    if (TT.isRaisa())
++      return "e-m:e-p:64:64:64:32-p3:32:32:32:32-p4:32:32:32:32-"
++             "i64:64-i128:128-n32:64-S128-A5";
++
+     return "e-m:e-p:64:64-i64:64-i128:128-n32:64-S128";
+   }
+   assert(TT.isArch32Bit() && "only RV32 and RV64 are currently supported");
+--- a/clang/lib/CodeGen/Targets/RISCV.cpp
++++ b/clang/lib/CodeGen/Targets/RISCV.cpp
+@@ -798,6 +798,18 @@
+ 
+     auto *Fn = cast<llvm::Function>(GV);
+ 
++#ifdef __TSM_RISCV__
++    // RAISA device kernels carry the fork's RPU_KERNEL calling convention,
++    // which the IR printer spells `rpu_kernel` -- the vendor's device IR is
++    // `define dso_local rpu_kernel void @...`.  `__attribute__((global))` maps
++    // onto CUDAGlobalAttr (Attr.td gives CUDA{Device,Global,Shared}
++    // LangOpts = [CUDA, RAISA]) so this mirrors what NVPTXTargetCodeGenInfo
++    // does for CUDA kernels.  Gated on the RAISA OS triple, so the host half of
++    // an offload compile (`-x raisa` with an x86_64 triple) keeps CC_C.
++    if (FD->hasAttr<CUDAGlobalAttr>() && CGM.getTarget().getTriple().isRaisa())
++      Fn->setCallingConv(llvm::CallingConv::RPU_KERNEL);
++#endif
++
+     if (CGM.getCodeGenOpts().CFProtectionReturn)
+       Fn->addFnAttr("hw-shadow-stack");
+ 
+--- a/llvm/lib/IR/AsmWriter.cpp
++++ b/llvm/lib/IR/AsmWriter.cpp
+@@ -375,6 +375,9 @@
+   case CallingConv::AVR_INTR:      Out << "avr_intrcc "; break;
+   case CallingConv::AVR_SIGNAL:    Out << "avr_signalcc "; break;
+   case CallingConv::PTX_Kernel:    Out << "ptx_kernel"; break;
++#ifdef __TSM_RISCV__
++  case CallingConv::RPU_KERNEL:    Out << "rpu_kernel"; break;
++#endif
+   case CallingConv::PTX_Device:    Out << "ptx_device"; break;
+   case CallingConv::X86_64_SysV:   Out << "x86_64_sysvcc"; break;
+   case CallingConv::Win64:         Out << "win64cc"; break;
+--- a/llvm/lib/AsmParser/LLParser.cpp
++++ b/llvm/lib/AsmParser/LLParser.cpp
+@@ -2236,6 +2236,9 @@
+   case lltok::kw_avr_intrcc:     CC = CallingConv::AVR_INTR; break;
+   case lltok::kw_avr_signalcc:   CC = CallingConv::AVR_SIGNAL; break;
+   case lltok::kw_ptx_kernel:     CC = CallingConv::PTX_Kernel; break;
++#ifdef __TSM_RISCV__
++  case lltok::kw_rpu_kernel:     CC = CallingConv::RPU_KERNEL; break;
++#endif
+   case lltok::kw_ptx_device:     CC = CallingConv::PTX_Device; break;
+   case lltok::kw_spir_kernel:    CC = CallingConv::SPIR_KERNEL; break;
+   case lltok::kw_spir_func:      CC = CallingConv::SPIR_FUNC; break;

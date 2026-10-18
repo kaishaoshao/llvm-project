@@ -1,0 +1,478 @@
+--- a/llvm/lib/Target/RISCV/CMakeLists.txt
++++ b/llvm/lib/Target/RISCV/CMakeLists.txt
+@@ -63,6 +63,7 @@
+   RISCVSelectionDAGInfo.cpp
+   RISCVSubtarget.cpp
+   RISCVTargetMachine.cpp
++  TX8RegisterRename.cpp
+   RISCVTargetObjectFile.cpp
+   RISCVTargetTransformInfo.cpp
+   RISCVVectorMaskDAGMutation.cpp
+--- a/llvm/lib/Target/RISCV/RISCV.h
++++ b/llvm/lib/Target/RISCV/RISCV.h
+@@ -118,6 +118,10 @@
+ void initializeRISCVVMV0EliminationPass(PassRegistry &);
+ 
+ void initializeRISCVAsmPrinterPass(PassRegistry &);
++
++FunctionPass *createTX8RegisterRenamePass();
++void initializeTX8RegisterRenamePass(PassRegistry &);
++bool isTX8VRegRenameEnabled();
+ } // namespace llvm
+ 
+ #endif
+--- a/llvm/lib/Target/RISCV/RISCVTargetMachine.cpp
++++ b/llvm/lib/Target/RISCV/RISCVTargetMachine.cpp
+@@ -153,6 +153,7 @@
+   initializeRISCVExpandAtomicPseudoPass(*PR);
+   initializeRISCVRedundantCopyEliminationPass(*PR);
+   initializeRISCVAsmPrinterPass(*PR);
++  initializeTX8RegisterRenamePass(*PR);
+ }
+ 
+ static StringRef computeDataLayout(const Triple &TT,
+@@ -597,6 +598,11 @@
+   addPass(createUnpackMachineBundles([&](const MachineFunction &MF) {
+     return MF.getFunction().getParent()->getModuleFlag("kcfi");
+   }));
++
++  // TX82: break vector register anti-dependencies.  Only enabled from -O2 on.
++  if (isTX8VRegRenameEnabled() &&
++      TM->getOptLevel() >= CodeGenOptLevel::Default)
++    addPass(createTX8RegisterRenamePass());
+ }
+ 
+ void RISCVPassConfig::addMachineSSAOptimization() {
+--- a/llvm/lib/Target/RISCV/TX8RegisterRename.cpp
++++ b/llvm/lib/Target/RISCV/TX8RegisterRename.cpp
+@@ -0,0 +1,430 @@
++//===-- TX8RegisterRename.cpp - Break vector register anti-dependencies ---===//
++//
++// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
++// See https://llvm.org/LICENSE.txt for license information.
++// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++//
++//===----------------------------------------------------------------------===//
++//
++// TX82 (tsm-x82) vector register rename pass.
++//
++// The TX82 vector unit is sensitive to write-after-read hazards on the vector
++// register file: an instruction that writes the physical vector register an
++// earlier instruction read forces the write to be ordered after the read.
++// This pass removes such anti-dependencies by renaming the destination
++// register of the offending instruction - and every reference to the value it
++// produces - to a free register of the same register class.
++//
++// Reconstructed from the vendor object
++// `libLLVMRISCVCodeGen.a(TX8RegisterRename.cpp.o)`.  The observable rule set
++// (established with the vendor `llc -run-pass=vreg-rename` as an oracle) is:
++//
++//   * Only the vector register classes (VR / VRM2 / VRM4 / VRM8 and their
++//     `NoV0` variants, which back masked instructions) are considered.
++//   * A definition of R is renamed when R already has a definition *earlier in
++//     the same machine basic block*.  A block-local live-in value (defined in a
++//     predecessor) is never renamed.
++//   * A definition is left alone when the value it produces has to stay in
++//     place, i.e. when it is live out of the block or when one of its
++//     references is an operand that cannot be rewritten (the implicit
++//     return-value operand of PseudoRET).
++//   * The replacement register comes from a per-class, monotonically advancing
++//     cursor over the allocatable registers (ascending register number); a
++//     register skipped because it was live is never revisited.
++//
++//===----------------------------------------------------------------------===//
++
++#include "RISCV.h"
++#include "RISCVInstrInfo.h"
++#include "RISCVRegisterInfo.h"
++#include "RISCVSubtarget.h"
++#include "llvm/ADT/BitVector.h"
++#include "llvm/ADT/DenseMap.h"
++#include "llvm/ADT/SmallVector.h"
++#include "llvm/CodeGen/LivePhysRegs.h"
++#include "llvm/CodeGen/MachineBasicBlock.h"
++#include "llvm/CodeGen/MachineFunction.h"
++#include "llvm/CodeGen/MachineFunctionPass.h"
++#include "llvm/CodeGen/MachineInstr.h"
++#include "llvm/CodeGen/MachineOperand.h"
++#include "llvm/CodeGen/MachineRegisterInfo.h"
++#include "llvm/CodeGen/RegisterClassInfo.h"
++#include "llvm/CodeGen/TargetInstrInfo.h"
++#include "llvm/CodeGen/TargetRegisterInfo.h"
++#include "llvm/CodeGen/TargetSubtargetInfo.h"
++#include "llvm/InitializePasses.h"
++#include "llvm/Pass.h"
++#include "llvm/Support/CommandLine.h"
++
++using namespace llvm;
++
++#define DEBUG_TYPE "tx8-vreg-rename"
++
++static cl::opt<bool> EnableTX8VRegRename("riscv-vreg-rename", cl::Hidden,
++                                         cl::init(true),
++                                         cl::desc("TX8 vector register "
++                                                  "rename"));
++
++static cl::opt<bool>
++    EnableRenameOrderOpt("riscv-vreg-rename-order-opt", cl::Hidden,
++                         cl::init(false),
++                         cl::desc("Optimize for vreg rename order across MBB"));
++
++namespace {
++
++/// A physical register class and the cursor into its allocatable register
++/// list.  The cursor is carried across basic blocks, like the vendor's
++/// `DenseMap<const TargetRegisterClass *, unsigned>` argument to
++/// `breakAntiDeps()`.
++struct RegClassCursor {
++  SmallVector<MCPhysReg, 32> Order;
++  unsigned Next = 0;
++};
++
++class VRegReNamer {
++public:
++  VRegReNamer(MachineFunction &MFi, const RegisterClassInfo &RCI)
++      : MF(MFi), MRI(MF.getRegInfo()),
++        TII(MF.getSubtarget<RISCVSubtarget>().getInstrInfo()),
++        TRI(MF.getSubtarget<RISCVSubtarget>().getRegisterInfo()),
++        RegClassInfo(RCI) {}
++
++  bool run(DenseMap<const TargetRegisterClass *, RegClassCursor> &Cursors);
++
++private:
++  bool breakAntiDeps(
++      MachineBasicBlock &MBB,
++      DenseMap<const TargetRegisterClass *, RegClassCursor> &Cursors);
++
++  static bool isVectorRegClass(const TargetRegisterClass *RC) {
++    return RC && RISCVRI::isVRegClass(RC->TSFlags);
++  }
++
++  /// The vector register classes this pass is allowed to rename within.
++  static ArrayRef<const TargetRegisterClass *> vectorRegClasses() {
++    static const TargetRegisterClass *const Classes[] = {
++        &RISCV::VRRegClass,       &RISCV::VRM2RegClass,
++        &RISCV::VRM4RegClass,     &RISCV::VRM8RegClass,
++        &RISCV::VRNoV0RegClass,   &RISCV::VRM2NoV0RegClass,
++        &RISCV::VRM4NoV0RegClass, &RISCV::VRM8NoV0RegClass};
++    return Classes;
++  }
++
++  /// Register class containing \p Reg if it is one of the vector classes.
++  static const TargetRegisterClass *vectorRegClassOf(MCRegister Reg) {
++    for (const TargetRegisterClass *RC : vectorRegClasses())
++      if (RC->contains(Reg))
++        return RC;
++    return nullptr;
++  }
++
++  const TargetRegisterClass *getOperandRegClass(const MachineInstr &MI,
++                                                unsigned OpIdx) const {
++    const MCInstrDesc &Desc = MI.getDesc();
++    if (OpIdx < Desc.getNumOperands())
++      if (const TargetRegisterClass *RC =
++              TII->getRegClass(Desc, OpIdx, TRI, MF))
++        if (isVectorRegClass(RC))
++          return RC;
++    return nullptr;
++  }
++
++  MCRegister findSuitableFreeRegister(
++      const TargetRegisterClass *RC, MCRegister AntiDepReg,
++      const LivePhysRegs &Live, const SmallVectorImpl<MCRegister> &Forbid,
++      DenseMap<const TargetRegisterClass *, RegClassCursor> &Cursors);
++
++  MachineFunction &MF;
++  MachineRegisterInfo &MRI;
++  const RISCVInstrInfo *TII;
++  const RISCVRegisterInfo *TRI;
++  const RegisterClassInfo &RegClassInfo;
++};
++
++MCRegister VRegReNamer::findSuitableFreeRegister(
++    const TargetRegisterClass *RC, MCRegister AntiDepReg,
++    const LivePhysRegs &Live, const SmallVectorImpl<MCRegister> &Forbid,
++    DenseMap<const TargetRegisterClass *, RegClassCursor> &Cursors) {
++  RegClassCursor &Cursor = Cursors[RC];
++  if (Cursor.Order.empty()) {
++    // The vendor walks the register class allocation order back to front, so
++    // that the low registers are preferred (the upstream RISC-V order puts V0
++    // last so that the greedy allocator does not needlessly block the high
++    // LMUL groups).
++    ArrayRef<MCPhysReg> Order = RegClassInfo.getOrder(RC);
++    for (const MCPhysReg *I = Order.end(), *E = Order.begin(); I != E;) {
++      --I;
++      if (MRI.isAllocatable(*I))
++        Cursor.Order.push_back(*I);
++    }
++  }
++
++  for (; Cursor.Next < Cursor.Order.size(); ++Cursor.Next) {
++    MCRegister NewReg = Cursor.Order[Cursor.Next];
++    // Never replace a register with itself.
++    if (NewReg == AntiDepReg)
++      continue;
++    // Registers still holding a live value are unavailable.  A register that
++    // is skipped here stays skipped: the cursor is never rewound.
++    if (!Live.available(MRI, NewReg))
++      continue;
++    bool Forbidden = false;
++    for (MCRegister R : Forbid)
++      if (TRI->regsOverlap(NewReg, R)) {
++        Forbidden = true;
++        break;
++      }
++    if (Forbidden)
++      continue;
++    ++Cursor.Next;
++    return NewReg;
++  }
++  return MCRegister();
++}
++
++bool VRegReNamer::breakAntiDeps(
++    MachineBasicBlock &MBB,
++    DenseMap<const TargetRegisterClass *, RegClassCursor> &Cursors) {
++  const unsigned NumRegs = TRI->getNumRegs();
++
++  // Registers whose *current* value must not move elsewhere.
++  BitVector KeepRegs(NumRegs);
++
++  // Block live-out.
++  for (const MachineBasicBlock *Succ : MBB.successors())
++    for (const auto &LI : Succ->liveins())
++      for (MCRegAliasIterator AI(LI.PhysReg, TRI, true); AI.isValid(); ++AI)
++        KeepRegs.set(*AI);
++
++  // Per register, the operands reading the value produced by the next
++  // definition encountered while scanning upwards.
++  SmallVector<std::pair<MCRegister, SmallVector<MachineOperand *, 4>>, 32> Refs;
++  auto refsFor = [&](MCRegister Reg) -> SmallVectorImpl<MachineOperand *> & {
++    for (auto &Entry : Refs)
++      if (Entry.first == Reg)
++        return Entry.second;
++    Refs.push_back({Reg, {}});
++    return Refs.back().second;
++  };
++  auto clearRefs = [&](MCRegister Reg) {
++    for (auto &Entry : Refs)
++      if (Entry.first == Reg) {
++        Entry.second.clear();
++        for (MCRegAliasIterator AI(Reg, TRI, true); AI.isValid(); ++AI)
++          if (*AI != Reg)
++            for (auto &Other : Refs)
++              if (Other.first == *AI)
++                Other.second.clear();
++        return;
++      }
++  };
++
++  // Forward pre-pass: which definitions are *not* the first definition of
++  // their register inside this block?
++  SmallVector<const MachineOperand *, 16> NotFirstDef;
++  {
++    BitVector Defined(NumRegs);
++    for (MachineInstr &MI : MBB) {
++      for (MachineOperand &MO : MI.operands()) {
++        if (!MO.isReg() || !MO.isDef())
++          continue;
++        MCRegister Reg = MO.getReg();
++        if (!Reg || !vectorRegClassOf(Reg))
++          continue;
++        if (Defined.test(Reg))
++          NotFirstDef.push_back(&MO);
++        else
++          Defined.set(Reg);
++      }
++    }
++  }
++  auto isNotFirstDef = [&](const MachineOperand *MO) {
++    return llvm::is_contained(NotFirstDef, MO);
++  };
++
++  LivePhysRegs Live(*TRI);
++  Live.addLiveOuts(MBB);
++  bool Changed = false;
++
++  for (MachineBasicBlock::reverse_iterator RIt = MBB.rbegin(), RE = MBB.rend();
++       RIt != RE; ++RIt) {
++    MachineInstr &MI = *RIt;
++    if (MI.isDebugInstr() || MI.isKill())
++      continue;
++
++    // Snapshot the defined registers before any rewriting: the cleanup below
++    // has to clear the state of the *original* registers.
++    SmallVector<MCRegister, 4> DefRegs;
++    SmallVector<MCRegister, 2> RenamedNew;
++    for (MachineOperand &MO : MI.operands())
++      if (MO.isReg() && MO.isDef() && MO.getReg())
++        DefRegs.push_back(MO.getReg());
++
++    // --- definitions ----------------------------------------------------
++    for (MachineOperand &MO : MI.operands()) {
++      if (!MO.isReg() || !MO.isDef())
++        continue;
++      MCRegister Reg = MO.getReg();
++      if (!Reg || !MRI.isAllocatable(Reg))
++        continue;
++      if (!vectorRegClassOf(Reg))
++        continue;
++      if (!isNotFirstDef(&MO))
++        continue;
++      // The value currently in Reg has to stay there.
++      if (KeepRegs.test(Reg))
++        continue;
++
++      const TargetRegisterClass *RC = getOperandRegClass(MI, MO.getOperandNo());
++      if (!RC)
++        RC = vectorRegClassOf(Reg);
++      if (!RC)
++        continue;
++
++      SmallVector<MCRegister, 4> Forbid;
++      for (MachineOperand &Other : MI.operands())
++        if (Other.isReg() && Other.isDef() && Other.getReg() != Reg)
++          Forbid.push_back(Other.getReg());
++
++      MCRegister NewReg =
++          findSuitableFreeRegister(RC, Reg, Live, Forbid, Cursors);
++      if (!NewReg)
++        continue;
++
++      // Renaming an operand also drops its "killed" annotation: the operand no
++      // longer refers to the value that was killed.
++      auto renameOp = [](MachineOperand &O, MCRegister R) {
++        O.setReg(R);
++        if (O.isUse())
++          O.setIsKill(false);
++      };
++
++      renameOp(MO, NewReg);
++      const unsigned OpNo = MO.getOperandNo();
++      for (unsigned I = 0, E = MI.getNumOperands(); I != E; ++I) {
++        MachineOperand &Other = MI.getOperand(I);
++        if (!Other.isReg() || !Other.isUse() || Other.getReg() != Reg)
++          continue;
++        if (Other.isTied() && MI.findTiedOperandIdx(I) == OpNo)
++          renameOp(Other, NewReg);
++      }
++      for (auto &Entry : Refs)
++        if (Entry.first == Reg)
++          for (MachineOperand *Ref : Entry.second)
++            renameOp(*Ref, NewReg);
++      // The new register inherits the renamed value; any stale reference list
++      // for it must not survive.
++      for (MCRegAliasIterator AI(NewReg, TRI, true); AI.isValid(); ++AI)
++        clearRefs(*AI);
++
++      // The value that used to live in Reg now lives in NewReg: the vendor
++      // moves the liveness state across (this is what makes a later, earlier
++      // rename avoid the aliases of NewReg).
++      Live.removeReg(Reg);
++      Live.addReg(NewReg);
++      RenamedNew.push_back(NewReg);
++
++      Changed = true;
++    }
++
++    // Every definition starts a new value: drop the references and the
++    // "must stay in place" state of the previous value.
++    for (MCRegister Reg : DefRegs) {
++      clearRefs(Reg);
++      for (MCRegAliasIterator AI(Reg, TRI, true); AI.isValid(); ++AI) {
++        KeepRegs.reset(*AI);
++        clearRefs(*AI);
++      }
++    }
++
++    // --- uses -----------------------------------------------------------
++    for (MachineOperand &MO : MI.operands()) {
++      if (!MO.isReg() || !MO.isUse())
++        continue;
++      MCRegister Reg = MO.getReg();
++      if (!Reg || !vectorRegClassOf(Reg))
++        continue;
++      // The operand tied to a definition (the passthru of an RVV pseudo)
++      // belongs to that definition, not to the value defined above it.
++      if (MO.isTied() && MI.isRegTiedToDefOperand(MO.getOperandNo()))
++        continue;
++      refsFor(Reg).push_back(&MO);
++      if (MO.isImplicit())
++        for (MCRegAliasIterator AI(Reg, TRI, true); AI.isValid(); ++AI)
++          KeepRegs.set(*AI);
++    }
++
++    // --- liveness -------------------------------------------------------
++    for (MachineOperand &MO : reverse(MI.operands())) {
++      if (!MO.isReg())
++        continue;
++      MCRegister Reg = MO.getReg();
++      if (!Reg)
++        continue;
++      if (MO.isDef()) {
++        // A renamed definition keeps its (still live) value in the new
++        // register.
++        if (llvm::is_contained(RenamedNew, Reg))
++          continue;
++        Live.removeReg(Reg);
++      } else if (MO.isUse()) {
++        Live.addReg(Reg);
++      }
++    }
++  }
++  return Changed;
++}
++
++bool VRegReNamer::run(
++    DenseMap<const TargetRegisterClass *, RegClassCursor> &Cursors) {
++  bool Changed = false;
++  for (MachineBasicBlock &MBB : MF) {
++    // The per-class cursor is reset for every basic block (the vendor reuses
++    // the same DenseMap storage across blocks, but restarts the search each
++    // time).
++    Cursors.clear();
++    Changed |= breakAntiDeps(MBB, Cursors);
++  }
++  return Changed;
++}
++
++class TX8RegisterRename : public MachineFunctionPass {
++public:
++  static char ID;
++  TX8RegisterRename() : MachineFunctionPass(ID) {
++    initializeTX8RegisterRenamePass(*PassRegistry::getPassRegistry());
++  }
++
++  bool runOnMachineFunction(MachineFunction &MF) override;
++  StringRef getPassName() const override { return "TX8 Rename Registers"; }
++  void getAnalysisUsage(AnalysisUsage &AU) const override {
++    AU.setPreservesCFG();
++    MachineFunctionPass::getAnalysisUsage(AU);
++  }
++};
++
++} // end anonymous namespace
++
++char TX8RegisterRename::ID = 0;
++
++INITIALIZE_PASS(TX8RegisterRename, "vreg-rename", "TX8 Rename Registers", false,
++                false)
++
++bool TX8RegisterRename::runOnMachineFunction(MachineFunction &MF) {
++  const RISCVSubtarget &ST = MF.getSubtarget<RISCVSubtarget>();
++  if (!ST.hasVInstructions())
++    return false;
++
++  RegisterClassInfo RCI;
++  RCI.runOnMachineFunction(MF, false);
++
++  VRegReNamer Renamer(MF, RCI);
++  DenseMap<const TargetRegisterClass *, RegClassCursor> Cursors;
++  return Renamer.run(Cursors);
++}
++
++FunctionPass *llvm::createTX8RegisterRenamePass() {
++  return new TX8RegisterRename();
++}
++
++bool llvm::isTX8VRegRenameEnabled() { return EnableTX8VRegRename; }

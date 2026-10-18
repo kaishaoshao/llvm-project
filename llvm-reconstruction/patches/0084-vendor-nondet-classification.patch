@@ -1,0 +1,191 @@
+# 1027: register the three `alloc_*_base` cells as an explicit VENDOR-NONDET
+#       class in the two gate tools (no compiler change).
+#
+# Pre-image: this tree with 1024 applied, i.e. `tools/raisa_oracle.py` at its
+#            1024 state (NOT the 1025/1026 compiler patches -- they do not touch
+#            tools/) and `tools/round1_attrib.py` as of 2026-10-18 01:0x.
+# Replay:    cd <tree> && patch -p1 < this.patch   (a tools/ patch)
+#
+# The three cells (`alloc_l0{a,w}shared_base`, `alloc_l1shared_base`) differ
+# from the vendor only in the *order* in which multi-variable shared memory is
+# laid out (`b@+0, a@+576` vs our `a@+0, b@+128`).  Measured 2026-10-18, both
+# sides under `setarch -R`:
+#   * with a fixed command line the vendor is 8/8 md5-identical -- NOT run-to-run
+#     randomness;
+#   * but adding a *diagnostic-only* flag flips the layout, e.g.
+#     `-mllvm -debug-pass=Structure` -> `a@+0, b@+128` (= our layout) 3/3 runs
+#     on all three cells, while the manifest command gives `b@+0, a@+576`.
+#     Which incidental flag flips it depends on the rest of the command line
+#     (absolute vs relative source path, `-o` file vs /dev/stdout, flag
+#     position) => the order is decided by process heap state (the vendor's
+#     pointer-keyed `getTransitiveUsesOfShared`/`SharedUsesInfoTy`), not by the
+#     IR.
+#   => byte identity is not a well-defined target for these cells.
+#
+# What this patch adds:
+#   * `tools/raisa_oracle.py`: `VENDOR_NONDET_CELLS` + `NONDET_VARIANT`; for
+#     those cells it compiles the vendor a second time with the diagnostic-only
+#     flag and reports `asm:IDENTICAL-VENDOR-NONDET` when our asm equals that
+#     (vendor-emitted) layout.  The summary now prints TWO numbers:
+#       `== cells: N/M byte-identical; + 3 VENDOR-NONDET = N+3/M under the
+#        layout-set caliber -- NOT M/M`
+#   * `tools/round1_attrib.py`: the same three cells get the verdict
+#     `vendor-nondet` (excluded from byte-diff attribution, never counted as
+#     byte-identical) and the run prints the same pair of numbers.
+#
+# Out-of-tree scratch-tool fix made at the same time (not part of this patch,
+# the file lives in another line's tree):
+#   wt-raisa-r2/tools/rpu_nondet.py :: check_sequential() used
+#     `off = (off + (1 << 40)) // al * al`, which returns 2**40 for every small
+#     `off` and made every layout print `seq-perm=NO`.  It is now
+#     `off = (off + al - 1) // al * al`; the per-variable maps it printed were
+#     always fine, only that verdict was wrong.
+--- a/tools/raisa_oracle.py
++++ b/tools/raisa_oracle.py
+@@ -51,6 +51,33 @@
+ MACHINE = platform.machine()
+ NONDET_TSV = WT / "parity" / "vendor_nondet.tsv"
+ 
++# Cells whose multi-variable shared-memory *layout* is decided by the vendor's
++# pointer-keyed container, i.e. by process heap state rather than by the IR.
++#
++# Evidence (measured 2026-10-18, both sides under `setarch -R`):
++#   * with a fixed command line the vendor is 8/8 md5-identical -- this is NOT
++#     run-to-run randomness;
++#   * but adding a *diagnostic* flag flips the layout between
++#       b@+0, a@+576   (the manifest/obj-faithful command)
++#       a@+0, b@+128   (= ours)
++#     `-mllvm -debug-pass=Structure` (and `-print-after` with a shifted heap)
++#     give the latter 3/3 on all three cells; which incidental flag flips it
++#     depends on the rest of the command line (absolute vs relative source
++#     path, -o file vs /dev/stdout, flag position), i.e. on process heap state.
++#   => byte identity is not a well-defined target for these cells.  Acceptance
++#   is "our output equals one of the vendor's own observed layouts", which is
++#   checked below by compiling the vendor a second time with NONDET_VARIANT and
++#   comparing against either layout.
++VENDOR_NONDET_CELLS = {
++    "alloc_l0ashared_base",
++    "alloc_l0wshared_base",
++    "alloc_l1shared_base",
++}
++# Diagnostic-only flag used to sample a second vendor layout of the same cell.
++# It changes nothing but the heap/streams, and yields the a@+0,b@+128 layout
++# 3/3 on all three cells with this tool's exact command shape.
++NONDET_VARIANT = ["-mllvm", "-debug-pass=Structure"]
++
+ # `lui rd, imm` materialises the high 20 bits of a 32-bit shared base address;
+ # every observed base (0x40000000, 0x40100000, 0x101000000) is 4 KiB aligned, so
+ # it always shows up as a bare `lui`.
+@@ -228,7 +255,17 @@
+             c, f, tag = futs[fut]
+             res[(tag, c, f)] = fut.result()
+     nondet = load_nondet()
++    # Second vendor layout per VENDOR-NONDET cell (see the registry above).
++    variant = {}
++    for c in cells:
++        if c not in VENDOR_NONDET_CELLS:
++            continue
++        out, _, _ = compile_one(VENDOR, "nondet", c, "asm",
++                                options=cell_opts[c] + NONDET_VARIANT)
++        variant[c] = norm_s(out)
+     n_same = n_diff = n_gap = n_perm = n_vnondet_diff = 0
++    n_vnondet_pass = 0
++    cell_verdict = {}
+     for c in cells:
+         row = []
+         for f, norm in (("asm", norm_s), ("obj", norm_o)):
+@@ -252,6 +289,12 @@
+             elif v == o:
+                 row.append("%s:IDENTICAL" % f)
+                 n_same += 1
++            elif c in VENDOR_NONDET_CELLS and f == "asm" and \
++                    variant.get(c) is not None and variant[c] == o:
++                # our layout is one the vendor itself produces for this cell
++                # (with a different heap state); see VENDOR_NONDET_CELLS.
++                row.append("%s:IDENTICAL-VENDOR-NONDET" % f)
++                n_vnondet_pass += 1
+             elif c in nondet and f == "asm" and \
+                     canon_addr(v) == canon_addr(o):
+                 # same layout modulo which shared variable got which base
+@@ -263,11 +306,31 @@
+                     n_vnondet_diff += 1
+                 else:
+                     n_diff += 1
+-        print("%-34s %s%s" % (c, "  ".join(row),
+-                              "   [VENDOR-NONDET]" if c in nondet else ""))
+-    print("== asm+obj slots: %d identical, %d identical-modulo-perm, %d diff, "
+-          "%d ours-fail, %d diff-on-VENDOR-NONDET-cell (not counted as gap)"
+-          % (n_same, n_perm, n_diff, n_gap, n_vnondet_diff))
++        tag = "   [VENDOR-NONDET]" if (c in nondet or
++                                         c in VENDOR_NONDET_CELLS) else ""
++        print("%-34s %s%s" % (c, "  ".join(row), tag))
++        if all("both-fail" in t for t in row):
++            cell_verdict[c] = "both-fail"
++        elif any("IDENTICAL-VENDOR-NONDET" in t for t in row) and \
++                all("IDENTICAL" in t for t in row):
++            cell_verdict[c] = "vnondet"
++        elif all("IDENTICAL" in t for t in row):
++            cell_verdict[c] = "identical"
++        else:
++            cell_verdict[c] = "diff"
++    print("== asm+obj slots: %d identical, %d identical-vendor-nondet, "
++          "%d identical-modulo-perm, %d diff, %d ours-fail, "
++          "%d diff-on-VENDOR-NONDET-cell (not counted as gap)"
++          % (n_same, n_vnondet_pass, n_perm, n_diff, n_gap, n_vnondet_diff))
++    n_fail_cells = sum(1 for v in cell_verdict.values() if v == "both-fail")
++    n_ident = sum(1 for v in cell_verdict.values() if v == "identical")
++    n_vn = sum(1 for v in cell_verdict.values() if v == "vnondet")
++    denom = len(cells) - n_fail_cells
++    print("== cells: %d/%d byte-identical;  + %d VENDOR-NONDET "
++          "(our layout is one the vendor itself emits) = %d/%d under the "
++          "layout-set caliber -- NOT %d/%d, byte identity is not well defined "
++          "for those %d cells"
++          % (n_ident, denom, n_vn, n_ident + n_vn, denom, denom, denom, n_vn))
+     if a.mir:
+         print("\n== vsetvli shapes (vendor | ours)")
+         for c in cells:
+--- a/tools/round1_attrib.py
++++ b/tools/round1_attrib.py
+@@ -50,6 +50,19 @@
+ R4_RE = re.compile(r"gmem|generic|indirection", re.I)
+ COMMENT = re.compile(r"\s+#.*$")
+ 
++# Cells whose multi-variable shared-memory *layout* is decided by the vendor's
++# pointer-keyed container, i.e. by process heap state rather than by the IR
++# (see tools/raisa_oracle.py::VENDOR_NONDET_CELLS for the full evidence:
++# 8/8 md5-identical per fixed command line under `setarch -R`, but adding a
++# diagnostic-only flag flips `b@+0,a@+576` <-> `a@+0,b@+128`, the latter being
++# our layout).  Byte identity is not a well-defined target for them: they get
++# their own verdict, are excluded from the byte-diff attribution, and are *not*
++# counted as byte-identical (the caller gets both numbers).
++VENDOR_NONDET_CELLS = {
++    "alloc_l0ashared_base",
++    "alloc_l0wshared_base",
++    "alloc_l1shared_base",
++}
+ MODID2 = re.compile(r"^\s*(;\s*ModuleID|source_filename)\s*=")
+ IDENT2 = re.compile(r"^\s*!llvm\.ident\s*=")
+ 
+@@ -169,6 +182,8 @@
+             of = normcmp.fingerprint(WT / "parity" / OTAG / (name + vext), action)
+             if vf and vf == of:
+                 verdict = "byte-identical"
++            elif name in VENDOR_NONDET_CELLS:
++                verdict = "vendor-nondet"
+             else:
+                 verdict = "byte-diff"
+                 block, ev = diff_evidence(name, action)
+@@ -202,6 +217,13 @@
+             lang = ven[r[0]]["language"]
+             bylang[lang] = bylang.get(lang, 0) + 1
+     print("  gaps by language:", bylang)
++    n_ident = cnt.get("byte-identical", 0)
++    n_vn = cnt.get("vendor-nondet", 0)
++    print("=== byte-identical: %d/%d (raw);  + %d VENDOR-NONDET = %d/%d under "
++          "the layout-set caliber -- NOT %d/%d (byte identity is not well "
++          "defined for those %d cells)" % (n_ident, len(rows), n_vn,
++                                           n_ident + n_vn, len(rows),
++                                           len(rows), len(rows), n_vn))
+     print("wrote " + a.out)
+ 
+ 

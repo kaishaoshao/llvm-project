@@ -1,0 +1,162 @@
+# 1024: make the `.rc` oracle compile each cell with the options its manifest
+#       entry carries (measurement-tool caliber fix; no compiler change).
+#
+# Why: `tools/raisa_oracle.py` used one hard-coded `-cc1 -triple ... -O2`
+# command line for *every* cell, ignoring `case["options"]` in
+# `docx/tests/llvm/tx8_blackbox/round2/manifest.json`.  Eight cells are not
+# meant to be built that way (`-fraisa-short-ptr`: alloc_l1_short_ptr,
+# mem_l1_multi_short_ptr; `-mllvm -riscv-bank-aware=true`: the four
+# `*_bank_on` cells, mem_l1_multi_bank_on), so the oracle compared a
+# configuration the vendor never ran.
+#
+# Measured effect of the fix (same binary, sweep 0/0):
+#   alloc_l1_short_ptr      asm:DIFF obj:IDENTICAL -> asm:IDENTICAL obj:IDENTICAL
+#   alloc_l1shared_bank_on  asm:DIFF obj:IDENTICAL -> asm:IDENTICAL obj:IDENTICAL
+#   alloc_l0{a,w}shared_bank_on obj:IDENTICAL -> obj:DIFF (the bank layout really
+#       is different once the pass runs; that is the `bank-aware-shared` item)
+#   cell-level baseline: 94/103 -> 96/103 byte-identical, slots 195/11 unchanged.
+#
+# The options are filtered like `tools/corpus_parity.py::command()`: only
+# `-mllvm -print-*` / `-debug-*` / diagnostic flags are dropped, everything
+# else is appended to the cc1 command line for both sides and for every flavour
+# (asm, obj, mir, --probe).
+#
+# Apply from the *tree root* (`cd wt-merge-e && patch -p1 < this.patch`); this
+# is a tools/ patch, unlike the src/ compiler patches.
+#
+--- a/tools/raisa_oracle.py
++++ b/tools/raisa_oracle.py
+@@ -17,6 +17,7 @@
+ import argparse
+ import concurrent.futures as cf
+ import hashlib
++import json
+ import os
+ import platform
+ import re
+@@ -29,6 +30,11 @@
+ WT = ROOT / "wt-merge-e"
+ SRC = ROOT / "docx/tests/llvm/tx8_blackbox/round2/sources"
+ VENDOR = str(ROOT / "llvm-toolchain/bin/clang")
++# The corpus manifest carries each cell's *own* options (e.g. `-fraisa-short-ptr`
++# for `alloc_l1_short_ptr`, `-mllvm -riscv-bank-aware=true` for the four
++# `*_bank_on` cells).  Comparing those cells under the bare command line
++# measures a configuration the vendor never ran, so the options are read here.
++MANIFEST = ROOT / "docx/tests/llvm/tx8_blackbox/round2/manifest.json"
+ OUT = WT / "simt/oracle"
+ OBJCOPY = str(ROOT / "llvm-toolchain/bin/llvm-objcopy")
+ 
+@@ -51,6 +57,48 @@
+ LUI_RE = re.compile(r"\blui\s+(\w+),\s*(\d+)\b")
+ 
+ 
++# Flags that only change what is printed, never what is generated.
++DIAG_ONLY = ("-print", "-debug-pass", "-debug-only", "-time-passes", "-stats",
++             "-dsymutil", "-disable-verify")
++
++
++def diagnostic_only(flag):
++    return flag.startswith(DIAG_ONLY)
++
++
++def load_cell_options():
++    """cell stem -> extra cc1 options, exactly as the corpus manifest records.
++
++    `-mllvm -print-after=...` (and friends) are dropped: they are diagnostic
++    only.  The vendor probe that produced the manifest ran each cell with these
++    options, so both sides must be compiled with them or the comparison is
++    meaningless (`alloc_l1_short_ptr`, `*_bank_on`)."""
++    out = {}
++    for case in json.loads(MANIFEST.read_text()):
++        if case.get("language") != "raisa":
++            continue
++        stem = Path(case["source"]).stem
++        raw = list(case.get("options", []))
++        opts = []
++        i = 0
++        while i < len(raw):
++            tok = raw[i]
++            nxt = raw[i + 1] if i + 1 < len(raw) else None
++            if tok == "-mllvm" and nxt is not None:
++                if not diagnostic_only(nxt):
++                    opts += [tok, nxt]
++                i += 2
++                continue
++            if not diagnostic_only(tok):
++                opts.append(tok)
++            i += 1
++        prev = out.setdefault(stem, opts)
++        if prev != opts:
++            sys.exit("manifest: %s has two different non-diagnostic option "
++                     "sets (%r vs %r)" % (stem, prev, opts))
++    return out
++
++
+ def run(cmd, timeout=90):
+     pre = "ulimit -c 0; ulimit -f 4194304; "
+     p = subprocess.run(["/bin/bash", "-c",
+@@ -93,7 +141,7 @@
+     return out
+ 
+ 
+-def compile_one(cc, tag, cell, flavour, timeout=90):
++def compile_one(cc, tag, cell, flavour, options=(), timeout=90):
+     OUT.mkdir(parents=True, exist_ok=True)
+     if flavour == "asm":
+         out = OUT / ("%s.%s.s" % (cell, tag))
+@@ -106,8 +154,8 @@
+         extra = ["-S", "-mllvm", "-print-after=riscv-insert-vsetvli"]
+     if out.exists():
+         out.unlink()
+-    rc, log = run([cc] + CC1 + extra + [str(SRC / (cell + ".rc")), "-o", str(out)],
+-                  timeout)
++    rc, log = run([cc] + CC1 + list(options) + extra +
++                  [str(SRC / (cell + ".rc")), "-o", str(out)], timeout)
+     if flavour == "mir":
+         # -print-after writes to stderr; capture it next to the (empty) -o file.
+         out.write_text(log)
+@@ -157,13 +205,23 @@
+     else:
+         cells = [c for c in a.cells.split(",") if c]
+ 
++    cell_opts = load_cell_options()
++    missing = [c for c in cells if c not in cell_opts]
++    if missing:
++        sys.exit("no manifest entry for: %s" % ", ".join(missing))
++    for c in cells:
++        if cell_opts[c]:
++            print("# %-32s options: %s" % (c, " ".join(cell_opts[c])))
++
+     if a.probe:
+-        return probe(cells, a.probe, a.jobs)
++        return probe(cells, a.probe, a.jobs, cell_opts)
+ 
+     work = [(c, f) for c in cells for f in (["asm", "obj", "mir"] if a.mir else ["asm", "obj"])]
+     res = {}
+     with cf.ThreadPoolExecutor(max_workers=a.jobs) as ex:
+-        futs = {ex.submit(compile_one, cc, tag, c, f): (c, f, tag)
++        futs = {ex.submit(compile_one, cc, tag, c, f,
++                           options=cell_opts[c]):
++                (c, f, tag)
+                 for cc, tag in ((VENDOR, "vendor"), (ours_cc, "ours"))
+                 for (c, f) in work}
+         for fut in cf.as_completed(futs):
+@@ -221,7 +279,7 @@
+                 print("   %-34s ours  =%s" % ("", o if o else "-"))
+ 
+ 
+-def probe(cells, n, jobs):
++def probe(cells, n, jobs, cell_opts):
+     """Record the vendor's N>=8 observed layouts for the shared-address cells.
+ 
+     A cell whose vendor output is not unique is registered as VENDOR-NONDET:
+@@ -230,7 +288,8 @@
+     """
+     rows = []
+     def one(c, i):
+-        out, rc, log = compile_one(VENDOR, "probe%d" % i, c, "asm")
++        out, rc, log = compile_one(VENDOR, "probe%d" % i, c, "asm",
++                                   options=cell_opts[c])
+         txt = norm_s(out)
+         return c, (None if txt is None else txt)
+ 

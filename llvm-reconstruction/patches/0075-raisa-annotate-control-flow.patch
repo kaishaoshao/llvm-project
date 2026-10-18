@@ -1,0 +1,459 @@
+--- a/llvm/lib/Target/RISCV/RISCV.h
++++ b/llvm/lib/Target/RISCV/RISCV.h
+@@ -134,6 +134,15 @@
+ FunctionPass *createTX8LegalizeEXECPass();
+ void initializeTX8LegalizeEXECPass(PassRegistry &);
+ 
++// TX8AnnotateControlFlow.cpp -- fork `tx8-annotate-control-flow`: rewrites
++// every lane-divergent conditional branch into a divergence query
++// (`get.pred.mask` / `and.s` / `raisa.divergent`) and restores the enclosing
++// active mask (`set.exec`) where such a region closes.  Runs immediately
++// before `simt2simd`, which is the only order that lets it see the
++// pre-vectorisation CFG.
++FunctionPass *createTX8AnnotateControlFlowLegacyPass();
++void initializeTX8AnnotateControlFlowLegacyPass(PassRegistry &);
++
+ FunctionPass *createTX8RegisterRenamePass();
+ void initializeTX8RegisterRenamePass(PassRegistry &);
+ bool isTX8VRegRenameEnabled();
+--- a/llvm/lib/Target/RISCV/CMakeLists.txt
++++ b/llvm/lib/Target/RISCV/CMakeLists.txt
+@@ -64,6 +64,7 @@
+   RISCVSubtarget.cpp
+   RISCVTargetMachine.cpp
+   RISCVTargetObjectFile.cpp
++  TX8AnnotateControlFlow.cpp
+   TX8InsertXFRM.cpp
+   TX8LegalizeEXEC.cpp
+   TX8TransformSIMTToSIMD.cpp
+--- a/llvm/lib/Target/RISCV/RISCVTargetMachine.cpp
++++ b/llvm/lib/Target/RISCV/RISCVTargetMachine.cpp
+@@ -152,6 +152,7 @@
+   initializeRISCVVLOptimizerPass(*PR);
+   initializeTX8InsertXFRMPass(*PR);
+   initializeTX8OptimizeConfigInstrsPass(*PR);
++  initializeTX8AnnotateControlFlowLegacyPass(*PR);
+   initializeTX8TransformSIMTToSIMDPass(*PR);
+   initializeTX8LowerSharedLegacyPass(*PR);
+   // wt-exec line: the vendor runs `legalize-exec` after `riscv-copyelim`, i.e.
+@@ -536,6 +537,21 @@
+     // the loop passes and *before* `simt2simd`, which `-mllvm
+     // -print-before=config-instr-opt -mllvm -print-before=simt2simd` confirms.
+     addPass(createTX8OptimizeConfigInstrsPass());
++    // The vendor's `-mllvm -debug-pass=Structure` order is
++    //   ... -structurizecfg -loops -cycles -uniformity
++    //   -tx8-annotate-control-flow -simt2simd -domtree -early-cse
++    //   -rpu-lower-shared ...
++    // i.e. the control-flow annotation runs immediately before `simt2simd`.
++    // It has to: `simt2simd` may only vectorise kernels whose branches are
++    // uniform, and the annotation is what turns a lane-dependent `br` into a
++    // `raisa.divergent` query.  (`rpu-unify-divergent-exit-nodes` and
++    // `structurizecfg`, which the vendor runs just before it, are MIR/IR
++    // no-ops for every cell of the round-2 corpus -- verified with
++    // `-print-before=rpu-unify-divergent-exit-nodes` /
++    // `-print-before=structurizecfg` / `-print-before=tx8-annotate-control-flow`
++    // on `control_nested` and `control_early_return` -- so they are not
++    // ported.)
++    addPass(createTX8AnnotateControlFlowLegacyPass());
+     addPass(createTX8TransformSIMTToSIMDPass());
+     // The vendor's pipeline runs `-domtree -early-cse` between `simt2simd` and
+     // `rpu-lower-shared` (verbatim from its own `-mllvm
+--- /dev/null
++++ b/llvm/lib/Target/RISCV/TX8AnnotateControlFlow.cpp
+@@ -0,0 +1,396 @@
++//===- TX8AnnotateControlFlow.cpp - annotate lane-divergent control flow ---===//
++//
++// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
++// See https://llvm.org/LICENSE.txt for license information.
++// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++//
++//===----------------------------------------------------------------------===//
++//
++/// \file
++/// Fork pass `tx8-annotate-control-flow` (`TX8AnnotateControlFlowLegacy`).
++///
++/// The vendor runs this pass on RAISA device kernels *before* `simt2simd`
++/// (its own `-mllvm -debug-pass=Structure` lists
++///   `-structurizecfg -loops -cycles -uniformity -tx8-annotate-control-flow
++///    -simt2simd -domtree -early-cse -rpu-lower-shared`),
++/// and `simt2simd` can only vectorise a kernel whose branches are uniform: a
++/// branch on a lane value has to be rewritten into a *divergence query* first.
++///
++/// The pass therefore
++///   1. materialises the "incoming active lane mask" of the kernel entry block
++///      (`raisa.get.kernel.entry.exec` -> `mov128.s.v` -> `nor.s`), and
++///   2. for every **lane-divergent** conditional branch replaces
++///      `br i1 %c` by
++///        `%p  = get.pred.mask(i1 %c)`
++///        `%m  = and.s(%p, <enclosing mask>)`
++///        `%d  = raisa.divergent(%m)`
++///        `br i1 (icmp eq i64 %d, 0)`
++///      pushing `<successor 1>` with the narrowed mask, and
++///   3. restores the enclosing mask where such a region closes
++///      (`set.exec(<saved mask>)` at the merge block's first insertion point).
++///
++/// Structure, member layout and naming mirror the vendor's
++/// `TX8AnnotateControlFlow.cpp.o` (decompiled at
++/// `tools/re/out/TX8AnnotateControlFlow/decompiled.c`): the class keeps
++/// `F`/`DT`/`LI`/`UI`, one cached `EntryMask`, and a stack of
++/// `{BasicBlock *BB; Value *Mask; Value *Saved;}` entries; `closeControlFlow`
++/// and `getBBEntryMask` keep the vendor's exact responsibilities (a per-block
++/// entry mask query and a loop-header special case).
++///
++//===----------------------------------------------------------------------===//
++
++#include "RISCV.h"
++#include "llvm/ADT/DepthFirstIterator.h"
++#include "llvm/ADT/STLExtras.h"
++#include "llvm/ADT/SmallPtrSet.h"
++#include "llvm/ADT/SmallVector.h"
++#include "llvm/Analysis/LoopInfo.h"
++#include "llvm/Analysis/UniformityAnalysis.h"
++#include "llvm/IR/BasicBlock.h"
++#include "llvm/IR/CFG.h"
++#include "llvm/IR/Constants.h"
++#include "llvm/IR/Dominators.h"
++#include "llvm/IR/IRBuilder.h"
++#include "llvm/IR/IntrinsicsRISCV.h"
++#include "llvm/InitializePasses.h"
++#include "llvm/Pass.h"
++#include "llvm/Support/Debug.h"
++#include "llvm/Support/ErrorHandling.h"
++#include "llvm/Transforms/Utils/BasicBlockUtils.h"
++#include "llvm/Transforms/Utils/Local.h"
++
++using namespace llvm;
++
++#define DEBUG_TYPE "tx8-annotate-control-flow"
++
++namespace {
++
++/// One entry of the control-flow stack.
++///
++/// * `BB`    -- the block that will close the region (branch successor 1),
++/// * `Mask`  -- the mask in effect *inside* the region (the `and.s` result);
++///              this is what `getBBEntryMask` hands out for nested regions,
++/// * `Saved` -- the mask to restore when the region closes.  When it equals
++///              `Mask` the region does not change the active mask and
++///              `closeControlFlow` emits nothing (this is how the vendor ends
++///              up with no `set.exec` for uniform branches).
++struct StackEntry {
++  BasicBlock *BB;
++  Value *Mask;
++  Value *Saved;
++};
++
++/// A value is lane varying if it (transitively) depends on a SIMT register
++/// read.  This stands in for the vendor's divergence oracle, which lives in
++/// its own `RISCVTTIImpl::isSourceOfDivergence` override (`hasBranchDivergence`
++/// returns true unconditionally there).  We do not port that override: it is
++/// module-wide observable (loop unrolling and the uniformity analysis itself
++/// consult it) and its exact predicate could only be recovered partially.
++/// The local check is validated cell by cell against the vendor's own
++/// `-print-before/after=tx8-annotate-control-flow` dumps: over the 106 RAISA
++/// asm cells of the round-2 corpus it selects exactly the same branches.
++bool dependsOnLaneValue(const Value *V, SmallPtrSetImpl<const Value *> &Seen) {
++  if (!Seen.insert(V).second)
++    return false;
++
++  if (const auto *CI = dyn_cast<CallInst>(V))
++    if (const Function *Callee = CI->getCalledFunction())
++      if (Callee->getName().starts_with("llvm.riscv.read.reg."))
++        return true;
++
++  if (const auto *U = dyn_cast<User>(V))
++    for (const Value *Op : U->operands())
++      if (dependsOnLaneValue(Op, Seen))
++        return true;
++  return false;
++}
++
++class TX8AnnotateControlFlow {
++public:
++  TX8AnnotateControlFlow(Function &F, DominatorTree &DT, LoopInfo &LI,
++                         UniformityInfo &UI)
++      : F(&F), DT(&DT), LI(&LI), UI(&UI) {
++    LLVMContext &Ctx = F.getContext();
++    Boolean = Type::getInt1Ty(Ctx);
++    Int128 = Type::getInt128Ty(Ctx);
++    BoolTrue = ConstantInt::getTrue(Ctx);
++    BoolFalse = ConstantInt::getFalse(Ctx);
++    MaskTy = FixedVectorType::get(Int128, 1);
++    LaneMaskTy = ScalableVectorType::get(Boolean, 2);
++  }
++
++  bool run();
++
++private:
++  Function *F;
++  DominatorTree *DT;
++  LoopInfo *LI;
++  [[maybe_unused]] UniformityInfo *UI;
++
++  Type *Boolean;
++  Type *Int128;
++  Type *MaskTy;
++  Type *LaneMaskTy;
++  ConstantInt *BoolTrue;
++  ConstantInt *BoolFalse;
++
++  /// The mask in effect at kernel entry (cached; see `getBBEntryMask`).
++  Value *EntryMask = nullptr;
++
++  SmallVector<StackEntry, 8> Stack;
++
++  /// Is the branch lane-divergent?  (Vendor: `UI->isUniform(T) ||
++  /// T->hasMetadata("structurizecfg.uniform")` decides the *uniform* case; we
++  /// answer the complement directly, see `dependsOnLaneValue`.)
++  bool isDivergent(BranchInst *T) const {
++    if (T->hasMetadata("structurizecfg.uniform"))
++      return false;
++    SmallPtrSet<const Value *, 16> Seen;
++    return dependsOnLaneValue(T->getCondition(), Seen);
++  }
++
++  bool isTopOfStack(BasicBlock *BB) const {
++    return !Stack.empty() && Stack.back().BB == BB;
++  }
++
++  void push(BasicBlock *BB, Value *Mask, Value *Saved) {
++    Stack.push_back({BB, Mask, Saved});
++  }
++
++  /// Can the condition represented by this PHI node be treated like an
++  /// "Else" block?  (Same rule as the vendor's `isElse`.)
++  bool isElse(PHINode *Phi);
++
++  /// The mask in effect at the entry of `BB`.
++  Value *getBBEntryMask(BasicBlock *BB, Value *Mask);
++
++  /// Close the last opened region; `Saved` receives the mask that was restored.
++  bool closeControlFlow(BasicBlock *BB, Value *&Saved);
++
++  /// Materialise the kernel entry mask (`get.kernel.entry.exec` ->
++  /// `mov128.s.v` -> `nor.s`) at the entry block's first insertion point.
++  Value *createEntryMask();
++};
++
++/// Is BB the last block saved on the stack ?
++bool TX8AnnotateControlFlow::isElse(PHINode *Phi) {
++  BasicBlock *IDom = DT->getNode(Phi->getParent())->getIDom()->getBlock();
++  for (unsigned i = 0, e = Phi->getNumIncomingValues(); i != e; ++i) {
++    if (Phi->getIncomingBlock(i) == IDom) {
++      if (Phi->getIncomingValue(i) != BoolTrue)
++        return false;
++    } else {
++      if (Phi->getIncomingValue(i) != BoolFalse)
++        return false;
++    }
++  }
++  return true;
++}
++
++Value *TX8AnnotateControlFlow::createEntryMask() {
++  BasicBlock &Entry = F->getEntryBlock();
++  BasicBlock::iterator IP = Entry.getFirstInsertionPt();
++  IRBuilder<> IRB(&*IP);
++  IRB.SetCurrentDebugLocation(IP->getStableDebugLoc());
++
++  Value *Exec = IRB.CreateIntrinsic(
++      Intrinsic::riscv_raisa_get_kernel_entry_exec, {LaneMaskTy}, {});
++  Value *Mov = IRB.CreateIntrinsic(Intrinsic::riscv_mov128_s_v, {LaneMaskTy},
++                                   {Exec});
++  return IRB.CreateIntrinsic(Intrinsic::riscv_nor_s, {}, {Mov, Mov});
++}
++
++/// The mask in effect at the entry of `BB`.
++///
++/// * With `Mask == nullptr` and an empty stack this is the kernel entry mask
++///   (created on first use, then cached).
++/// * With `Mask == nullptr` and a non-empty stack this is the narrowed mask of
++///   the region we are inside (the `and.s` result recorded on the stack top),
++///   which is why nested regions chain `and.s(%pred, %enclosing)`.
++/// * With a non-null `Mask` (the value a just-closed region restored) that
++///   value is the answer.
++///
++/// The vendor additionally has a loop-header branch here (it builds a
++/// `<1 x i128>` PHI in the header).  It never fires on the round-2 corpus --
++/// the vendor's own post-pass IR for all 106 RAISA asm cells contains no such
++/// PHI, including `control_divergent_loop`, whose loop is fully unrolled
++/// before this pass runs -- so, per the "do not port what the corpus does not
++/// need" rule, it is registered as an explicit gap rather than guessed at.
++Value *TX8AnnotateControlFlow::getBBEntryMask(BasicBlock *BB, Value *Mask) {
++  if (!Mask) {
++    if (Stack.empty()) {
++      if (!EntryMask)
++        EntryMask = createEntryMask();
++      Mask = EntryMask;
++    } else {
++      Mask = Stack.back().Mask;
++    }
++  }
++  (void)BB;
++  return Mask;
++}
++
++/// Close the last opened region, restoring the mask that was in effect before
++/// it.  Mirrors the vendor's `closeControlFlow`: pop, and emit nothing when the
++/// region did not narrow the mask.
++bool TX8AnnotateControlFlow::closeControlFlow(BasicBlock *BB, Value *&Saved) {
++  assert(!Stack.empty() && Stack.back().BB == BB && "stack mismatch");
++  StackEntry E = Stack.pop_back_val();
++  Saved = E.Saved;
++  if (E.Saved == E.Mask)
++    return false;
++
++  Loop *L = LI->getLoopFor(BB);
++  if (L && L->getHeader() == BB) {
++    // We can't insert the restore into a loop header: it would run on every
++    // iteration, when it should only run once, before the loop.
++    SmallVector<BasicBlock *, 8> Latches;
++    L->getLoopLatches(Latches);
++    SmallVector<BasicBlock *, 2> Preds;
++    for (BasicBlock *Pred : predecessors(BB))
++      if (!is_contained(Latches, Pred))
++        Preds.push_back(Pred);
++    BB = SplitBlockPredecessors(BB, Preds, "endcf.split", DT, LI, nullptr,
++                                false);
++  }
++
++  BasicBlock::iterator IP = BB->getFirstInsertionPt();
++  IRBuilder<> IRB(&*IP);
++  IRB.SetCurrentDebugLocation(IP->getStableDebugLoc());
++  IRB.CreateIntrinsic(Intrinsic::riscv_set_exec, {}, {Saved});
++  return true;
++}
++
++bool TX8AnnotateControlFlow::run() {
++  bool Changed = false;
++
++  for (df_iterator<BasicBlock *> I = df_begin(&F->getEntryBlock()),
++                                 E = df_end(&F->getEntryBlock());
++       I != E; ++I) {
++    BasicBlock *BB = *I;
++    BranchInst *Term = dyn_cast<BranchInst>(BB->getTerminator());
++
++    if (!Term || Term->isUnconditional()) {
++      if (isTopOfStack(BB)) {
++        Value *Saved = nullptr;
++        Changed |= closeControlFlow(BB, Saved);
++      }
++      continue;
++    }
++
++    if (I.nodeVisited(Term->getSuccessor(1))) {
++      // Back edge: the region opened at `BB` closes here.
++      if (isTopOfStack(BB)) {
++        Value *Saved = nullptr;
++        Changed |= closeControlFlow(BB, Saved);
++      }
++      continue;
++    }
++
++    Value *Saved = nullptr;
++    if (isTopOfStack(BB)) {
++      // A PHI-shaped condition (structurizecfg's "else" form) opens the
++      // complementary region instead of a fresh one.
++      PHINode *Phi = dyn_cast<PHINode>(Term->getCondition());
++      if (Phi && Phi->getParent() == BB && isElse(Phi)) {
++        StackEntry E = Stack.pop_back_val();
++        if (!isDivergent(Term)) {
++          push(Term->getSuccessor(1), E.Saved, E.Saved);
++        } else {
++          IRBuilder<> EB(&*BB->getFirstInsertionPt());
++          EB.CreateIntrinsic(Intrinsic::riscv_set_exec, {}, {E.Saved});
++
++          IRBuilder<> IRB(Term);
++          Value *NewMask = IRB.CreateIntrinsic(Intrinsic::riscv_or_s, {},
++                                               {E.Saved, E.Mask});
++          Value *D = IRB.CreateIntrinsic(Intrinsic::riscv_raisa_divergent, {},
++                                         {NewMask});
++          Term->setCondition(
++              IRB.CreateICmpEQ(D, Constant::getNullValue(D->getType())));
++          push(Term->getSuccessor(1), NewMask, E.Saved);
++          Changed = true;
++        }
++        Changed |= RecursivelyDeleteDeadPHINode(Phi);
++        continue;
++      }
++
++      Changed |= closeControlFlow(BB, Saved);
++    }
++
++    // Fetching the entry mask happens for *every* conditional branch: this is
++    // what makes the vendor create (and leave dead) the entry-mask triple in
++    // kernels whose branches all turn out to be uniform.
++    Value *Mask = getBBEntryMask(BB, Saved);
++
++    if (!isDivergent(Term)) {
++      // Uniform branch: it cannot split the lane mask, so nothing is annotated.
++      // The region still has to be tracked so nesting stays correct.
++      BasicBlock *Exit = Term->getSuccessor(1);
++      if (!isa<ReturnInst>(Exit->getTerminator()))
++        push(Exit, Mask, Mask);
++      continue;
++    }
++
++    IRBuilder<> IRB(Term);
++    Value *PredMask =
++        IRB.CreateIntrinsic(Intrinsic::riscv_get_pred_mask, {},
++                            {Term->getCondition()});
++    Value *NewMask =
++        IRB.CreateIntrinsic(Intrinsic::riscv_and_s, {}, {PredMask, Mask});
++    Value *D =
++        IRB.CreateIntrinsic(Intrinsic::riscv_raisa_divergent, {}, {NewMask});
++    Term->setCondition(
++        IRB.CreateICmpEQ(D, Constant::getNullValue(D->getType())));
++    push(Term->getSuccessor(1), NewMask, Mask);
++    Changed = true;
++  }
++
++  if (!Stack.empty())
++    report_fatal_error("failed to annotate CFG");
++
++  return Changed;
++}
++
++class TX8AnnotateControlFlowLegacy : public FunctionPass {
++public:
++  static char ID;
++
++  TX8AnnotateControlFlowLegacy() : FunctionPass(ID) {}
++
++  StringRef getPassName() const override { return "TX8 annotate control flow"; }
++
++  void getAnalysisUsage(AnalysisUsage &AU) const override {
++    AU.addRequired<DominatorTreeWrapperPass>();
++    AU.addRequired<LoopInfoWrapperPass>();
++    AU.addRequired<UniformityInfoWrapperPass>();
++    AU.addPreserved<LoopInfoWrapperPass>();
++    AU.addPreserved<DominatorTreeWrapperPass>();
++    FunctionPass::getAnalysisUsage(AU);
++  }
++
++  bool runOnFunction(Function &F) override {
++    DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
++    LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
++    UniformityInfo &UI =
++        getAnalysis<UniformityInfoWrapperPass>().getUniformityInfo();
++
++    TX8AnnotateControlFlow Impl(F, DT, LI, UI);
++    return Impl.run();
++  }
++};
++
++} // end anonymous namespace
++
++char TX8AnnotateControlFlowLegacy::ID = 0;
++
++INITIALIZE_PASS_BEGIN(TX8AnnotateControlFlowLegacy, DEBUG_TYPE,
++                      "TX8 annotate control flow", false, false)
++INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
++INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
++INITIALIZE_PASS_DEPENDENCY(UniformityInfoWrapperPass)
++INITIALIZE_PASS_END(TX8AnnotateControlFlowLegacy, DEBUG_TYPE,
++                    "TX8 annotate control flow", false, false)
++
++FunctionPass *llvm::createTX8AnnotateControlFlowLegacyPass() {
++  return new TX8AnnotateControlFlowLegacy();
++}

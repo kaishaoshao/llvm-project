@@ -1,0 +1,144 @@
+--- a/llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp
++++ b/llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp
+@@ -227,13 +227,18 @@
+   bool SEWLMULRatio = false;
+   bool TailPolicy = false;
+   bool MaskPolicy = false;
++  // TSM fork: this instruction demands a particular value of bit 8 of VTYPE
++  // (the bf16 format bit).  Declared per pseudo via the `AltFmtType` TSFlags
++  // property (RISCVII::hasAltFmtType).
++  bool AltFmt = false;
+   // If this is true, we demand that VTYPE is set to some legal state, i.e. that
+   // vill is unset.
+   bool VILL = false;
+ 
+   // Return true if any part of VTYPE was used
+   bool usedVTYPE() const {
+-    return SEW || LMUL || SEWLMULRatio || TailPolicy || MaskPolicy || VILL;
++    return SEW || LMUL || SEWLMULRatio || TailPolicy || MaskPolicy || AltFmt ||
++           VILL;
+   }
+ 
+   // Return true if any property of VL was used
+@@ -248,6 +253,7 @@
+     SEWLMULRatio = true;
+     TailPolicy = true;
+     MaskPolicy = true;
++    AltFmt = true;
+     VILL = true;
+   }
+ 
+@@ -273,6 +279,7 @@
+     SEWLMULRatio |= B.SEWLMULRatio;
+     TailPolicy |= B.TailPolicy;
+     MaskPolicy |= B.MaskPolicy;
++    AltFmt |= B.AltFmt;
+     VILL |= B.VILL;
+   }
+ 
+@@ -390,6 +397,10 @@
+   if (Used.MaskPolicy && RISCVVType::isMaskAgnostic(CurVType) !=
+                              RISCVVType::isMaskAgnostic(NewVType))
+     return false;
++  // TSM fork: bit 8 (bf16 format) is demanded by some XTsm82s vector pseudos.
++  if (Used.AltFmt &&
++      RISCVVType::isAltFmt(CurVType) != RISCVVType::isAltFmt(NewVType))
++    return false;
+   return true;
+ }
+ 
+@@ -547,6 +558,10 @@
+     Res.TailPolicy = false;
+   }
+ 
++  // TSM fork: pseudos marked `AltFmtType` demand bit 8 of VTYPE.  Set last so
++  // the SEW/LMUL-relaxing special cases above cannot drop it.
++  Res.AltFmt = RISCVII::hasAltFmtType(TSFlags);
++
+   return Res;
+ }
+ 
+@@ -577,6 +592,8 @@
+   uint8_t SEW = 0;
+   uint8_t TailAgnostic : 1;
+   uint8_t MaskAgnostic : 1;
++  // TSM fork: bit 8 of VTYPE (bf16 format).
++  uint8_t AltFmt : 1;
+   uint8_t SEWLMULRatioOnly : 1;
+ 
+ public:
+@@ -654,6 +671,7 @@
+   RISCVVType::VLMUL getVLMUL() const { return VLMul; }
+   bool getTailAgnostic() const { return TailAgnostic; }
+   bool getMaskAgnostic() const { return MaskAgnostic; }
++  bool getAltFmt() const { return AltFmt; }
+ 
+   bool hasNonZeroAVL(const LiveIntervals *LIS) const {
+     if (hasAVLImm())
+@@ -715,6 +733,7 @@
+     SEW = RISCVVType::getSEW(VType);
+     TailAgnostic = RISCVVType::isTailAgnostic(VType);
+     MaskAgnostic = RISCVVType::isMaskAgnostic(VType);
++    AltFmt = RISCVVType::isAltFmt(VType);
+   }
+   void setVTYPE(RISCVVType::VLMUL L, unsigned S, bool TA, bool MA) {
+     assert(isValid() && !isUnknown() &&
+@@ -723,14 +742,18 @@
+     SEW = S;
+     TailAgnostic = TA;
+     MaskAgnostic = MA;
++    AltFmt = false;
+   }
+ 
++  void setAltFmt(bool BF16Fmt) { AltFmt = BF16Fmt; }
++
+   void setVLMul(RISCVVType::VLMUL VLMul) { this->VLMul = VLMul; }
+ 
+   unsigned encodeVTYPE() const {
+     assert(isValid() && !isUnknown() && !SEWLMULRatioOnly &&
+            "Can't encode VTYPE for uninitialized or unknown");
+-    return RISCVVType::encodeVTYPE(VLMul, SEW, TailAgnostic, MaskAgnostic);
++    return RISCVVType::encodeVTYPE(VLMul, SEW, TailAgnostic, MaskAgnostic,
++                                   AltFmt);
+   }
+ 
+   bool hasSEWLMULRatioOnly() const { return SEWLMULRatioOnly; }
+@@ -742,9 +765,9 @@
+            "Can't compare VTYPE in unknown state");
+     assert(!SEWLMULRatioOnly && !Other.SEWLMULRatioOnly &&
+            "Can't compare when only LMUL/SEW ratio is valid.");
+-    return std::tie(VLMul, SEW, TailAgnostic, MaskAgnostic) ==
++    return std::tie(VLMul, SEW, TailAgnostic, MaskAgnostic, AltFmt) ==
+            std::tie(Other.VLMul, Other.SEW, Other.TailAgnostic,
+-                    Other.MaskAgnostic);
++                    Other.MaskAgnostic, Other.AltFmt);
+   }
+ 
+   unsigned getSEWLMULRatio() const {
+@@ -1126,6 +1149,8 @@
+   }
+ #endif
+   InstrInfo.setVTYPE(VLMul, SEW, TailAgnostic, MaskAgnostic);
++  // TSM fork: pseudos marked `AltFmtType` require bit 8 of VTYPE to be set.
++  InstrInfo.setAltFmt(RISCVII::hasAltFmtType(TSFlags));
+ 
+   forwardVSETVLIAVL(InstrInfo);
+ 
+@@ -1336,6 +1361,9 @@
+   if (Demanded.VLAny || (Demanded.VLZeroness && !EquallyZero))
+     Info.setAVL(IncomingInfo);
+ 
++  // TSM fork: `setVTYPE` below resets the altfmt bit, so remember the previous
++  // configuration's value first -- the bit is an equality demand like SEW/LMUL.
++  const bool PrevAltFmt = Info.getAltFmt();
+   Info.setVTYPE(
+       ((Demanded.LMUL || Demanded.SEWLMULRatio) ? IncomingInfo : Info)
+           .getVLMUL(),
+@@ -1346,6 +1374,7 @@
+           IncomingInfo.getTailAgnostic(),
+       (Demanded.MaskPolicy ? IncomingInfo : Info).getMaskAgnostic() ||
+           IncomingInfo.getMaskAgnostic());
++  Info.setAltFmt(Demanded.AltFmt ? IncomingInfo.getAltFmt() : PrevAltFmt);
+ 
+   // If we only knew the sew/lmul ratio previously, replace the VTYPE but keep
+   // the AVL.

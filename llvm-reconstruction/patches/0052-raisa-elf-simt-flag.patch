@@ -1,0 +1,16 @@
+--- a/llvm/lib/Target/RISCV/MCTargetDesc/RISCVELFStreamer.cpp
++++ b/llvm/lib/Target/RISCV/MCTargetDesc/RISCVELFStreamer.cpp
+@@ -87,6 +87,13 @@
+     EFlags |= ELF::EF_RISCV_RVC;
+   if (hasTSO())
+     EFlags |= ELF::EF_RISCV_TSO;
++  // Vendor fork: RAISA device objects are marked as SIMT objects.  The vendor
++  // object for mathdev_raisa_fadd_rn_f.rc carries e_flags 0x1001
++  // (EF_RISCV_RVC | EF_RISCV_SIMT) where this reconstruction produced 0x1, and
++  // a plain `-mcpu=tsm-x82` musl object on the vendor does *not* carry
++  // EF_RISCV_SIMT, so the flag follows the target OS.
++  if (getStreamer().getContext().getTargetTriple().isRaisa())
++    EFlags |= ELF::EF_RISCV_SIMT;
+ 
+   switch (ABI) {
+   case RISCVABI::ABI_ILP32:

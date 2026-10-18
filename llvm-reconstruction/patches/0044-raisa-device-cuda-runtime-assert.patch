@@ -1,0 +1,18 @@
+--- a/clang/lib/CodeGen/CodeGenModule.cpp
++++ b/clang/lib/CodeGen/CodeGenModule.cpp
+@@ -2183,6 +2183,15 @@
+   // device-mangling in host compilation could help catching certain ones.
+   assert(!isa<FunctionDecl>(ND) || !ND->hasAttr<CUDAGlobalAttr>() ||
+          getContext().shouldExternalize(ND) || getLangOpts().CUDAIsDevice ||
++         // RAISA: `__attribute__((global))` maps onto CUDAGlobalAttr (Attr.td
++         // gives CUDA{Device,Global,Shared} `LangOpts = [CUDA, RAISA]`), but the
++         // RAISA device pass has no CGRAISARuntime wired into CodeGenModule (the
++         // reconstruction only carries the unused `CreateTSRAISARuntime`
++         // factory).  The vendor is a Release build, so this assert's operand --
++         // and therefore `getCUDARuntime()` -- is never evaluated there;
++         // short-circuiting on RAISAIsDevice reproduces that Release behaviour
++         // instead of tripping the null-runtime assertion.
++         getLangOpts().RAISAIsDevice ||
+          (getContext().getAuxTargetInfo() &&
+           (getContext().getAuxTargetInfo()->getCXXABI() !=
+            getContext().getTargetInfo().getCXXABI())) ||

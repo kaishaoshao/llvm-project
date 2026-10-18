@@ -1,0 +1,192 @@
+--- a/llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp
++++ b/llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp
+@@ -47,6 +47,15 @@
+              "vill is cleared"),
+     cl::init(true));
+ 
++// Vendor fork (tx82/RAISA): `EnableSIMTMul`, symbol present in the vendor
++// libLLVMRISCVCodeGen.a.  Its default is *false*: the plain vendor invocation
++// (`-mllvm -print-after=riscv-insert-vsetvli`, no extra flag) emits
++// `VSET_SIMT 1` but no `VSET_SIMTMUL`; passing this option additionally emits
++// `VSET_SIMTMUL <imm>` right after it.
++static cl::opt<bool> EnableSIMTMul(DEBUG_TYPE "-enable-simtmul", cl::Hidden,
++                                   cl::desc("Emit VSET_SIMTMUL in SIMT mode"),
++                                   cl::init(false));
++
+ namespace {
+ 
+ /// Given a virtual register \p Reg, return the corresponding VNInfo for it.
+@@ -99,6 +108,63 @@
+   }
+ }
+ 
++/// Vendor fork, verbatim from the decompiled `runOnMachineFunction`
++/// (lines 8082-8086 of tools/re/out/RISCVInsertVSETVLI/decompiled.c):
++///
++///   if ((subtarget[0x21b] == 0) || (subtarget[0x34] != 0x2a))  SIMTMode = 0;
++///   else                                                       SIMTMode = 1;
++///
++/// The member names were unresolved in the decompilation, but the offsets are
++/// now pinned down against this tree's `-fdump-record-layouts`:
++///   * RISCVSubtarget + 0x21b is `bool HasVendorXTsm82s` (feature at byte 539),
++///   * RISCVSubtarget + 0x34  is `Triple::OSType OS` (MCSubtargetInfo's Triple
++///     member at byte 52), and 0x2a == 42 == `Triple::RAISA`.
++/// So the predicate is "the xtsm82s feature is on and the target OS is RAISA",
++/// i.e. the `riscv64-unknown-raisa` device triple.  The vendor additionally
++/// gates the *emission* of VSET_SIMT on `CallingConv::RPU_KERNEL` (0x7c).
++static bool isSIMTMode(const RISCVSubtarget *ST) {
++  return ST->hasVendorXTsm82s() &&
++         ST->getTargetTriple().getOS() == Triple::RAISA;
++}
++
++/// Vendor fork (`IsInstrDemandMaskPolicyUnderSIMT`, decompiled from
++/// libLLVMRISCVCodeGen.a).  Under the RAISA SIMT mode the "does this
++/// instruction care about the mask policy" question is not answered by the
++/// `UsesMaskPolicy` TSFlags bit of the instruction itself but by this predicate.
++///
++/// Semantics taken verbatim from the vendor decompilation:
++///   1. If \p MI has a masked counterpart, start from that (masked) pseudo's
++///      `UsesMaskPolicy` bit -- this is the `>> 0x10 & 1` bit of its TSFlags.
++///   2. (The vendor also forces the result for a small set of MC opcodes; those
++///      are indices into the vendor's instruction enum and could not be mapped
++///      onto this tree's numbering.  They only affect instructions whose
++///      destination EEW is not 1 bit; no reproduced RAISA cell reaches them.)
++///   3. A destination EEW of 1 bit (a mask producing operation) always demands
++///      the mask policy.
++///   4. When \p IsMaskAgnostic is non-null and the instruction demands the
++///      policy, it receives `destination EEW == 1 bit`, i.e. the demanded mask
++///      policy is *agnostic* for mask producing ops and *undisturbed* (`mu`,
++///      VMA = 0) for everything else.
++static bool IsInstrDemandMaskPolicyUnderSIMT(const MachineInstr &MI,
++                                            const RISCVSubtarget *ST,
++                                            bool *IsMaskAgnostic) {
++  bool Demand = false;
++  if (const RISCV::RISCVMaskedPseudoInfo *Masked =
++          RISCV::lookupMaskedIntrinsicByUnmasked(MI.getOpcode()))
++    Demand = ST->getInstrInfo()->get(Masked->MaskedPseudo).TSFlags &
++             RISCVII::UsesMaskPolicyMask;
++
++  const MCInstrDesc &Desc = MI.getDesc();
++  unsigned DestEEW =
++      (Desc.TSFlags & RISCVII::DestEEWMask) >> RISCVII::DestEEWShift;
++  if (DestEEW == 0)
++    Demand = true;
++
++  if (IsMaskAgnostic && Demand)
++    *IsMaskAgnostic = DestEEW == 0;
++  return Demand;
++}
++
+ /// Return true if this is an operation on mask registers.  Note that
+ /// this includes both arithmetic/logical ops and load/store (vlm/vsm).
+ static bool isMaskRegOp(const MachineInstr &MI) {
+@@ -353,8 +419,14 @@
+         Res.demandVL();
+ 
+     // Behavior is independent of mask policy.
+-    if (!RISCVII::usesMaskPolicy(TSFlags))
+-      Res.MaskPolicy = false;
++    if (!RISCVII::usesMaskPolicy(TSFlags)) {
++      // Vendor fork: under the RAISA SIMT mode the mask policy demand comes
++      // from IsInstrDemandMaskPolicyUnderSIMT instead of being dropped.
++      if (isSIMTMode(ST))
++        Res.MaskPolicy = IsInstrDemandMaskPolicyUnderSIMT(MI, ST, nullptr);
++      else
++        Res.MaskPolicy = false;
++    }
+   }
+ 
+   // Loads and stores with implicit EEW do not demand SEW or LMUL directly.
+@@ -856,6 +928,11 @@
+   // Possibly null!
+   LiveIntervals *LIS;
+ 
++  // Vendor fork: per-function "SIMT mode" switch, see isSIMTMode().  The vendor
++  // keeps this in the pass object (offset 0xc0 in the decompiled
++  // runOnMachineFunction).
++  bool SIMTMode = false;
++
+   std::vector<BlockData> BlockInfo;
+   std::queue<const MachineBasicBlock *> WorkList;
+ 
+@@ -1006,6 +1083,13 @@
+   unsigned SEW = Log2SEW ? 1 << Log2SEW : 8;
+   assert(RISCVVType::isValidSEW(SEW) && "Unexpected SEW");
+ 
++  // Vendor fork: under the RAISA SIMT mode the mask policy of the incoming
++  // configuration is taken from IsInstrDemandMaskPolicyUnderSIMT.  This is what
++  // turns the e32/m1 policy of a SIMT float op into `ta, mu` (vtype 80) instead
++  // of the upstream `ta, ma` (vtype 208).
++  if (SIMTMode)
++    (void)IsInstrDemandMaskPolicyUnderSIMT(MI, ST, &MaskAgnostic);
++
+   if (RISCVII::hasVLOp(TSFlags)) {
+     const MachineOperand &VLOp = MI.getOperand(getVLOpNum(MI));
+     if (VLOp.isImm()) {
+@@ -1815,6 +1899,15 @@
+   if (!ST->hasVInstructions())
+     return false;
+ 
++  // Vendor fork: per-function SIMT switch (see isSIMTMode).  The vendor tests
++  // the subtarget feature byte / target OS, not the calling convention; the
++  // calling convention is only consulted for the VSET_SIMT emission below
++  // (the decompiled guard is
++  //   `SIMTMode && (ST->getTargetTriple().getOS() != Triple::RAISA ||
++  //                 F.getCallingConv() == CallingConv::RPU_KERNEL)`,
++  // and Triple::RPU_KERNEL == CallingConv::RPU_KERNEL == 0x7c).
++  SIMTMode = isSIMTMode(ST);
++
+   LLVM_DEBUG(dbgs() << "Entering InsertVSETVLI for " << MF.getName() << "\n");
+ 
+   TII = ST->getInstrInfo();
+@@ -1887,6 +1980,50 @@
+     insertReadVL(MBB);
+ 
+   BlockInfo.clear();
++
++  // Vendor fork (`runOnMachineFunction` tail): in SIMT mode the RAISA kernels
++  // start with `VSET_SIMT 1` (and, with -riscv-insert-vsetvli-enable-simtmul,
++  // `VSET_SIMTMUL <imm>`) at the very top of the entry block, i.e. before the
++  // first instruction, which is the COPY of the kernel argument.  The vendor's
++  // MIR for mathdev_raisa_fadd_rn_f is
++  //     8B  VSET_SIMT 1, implicit-def $vl, implicit-def $vtype
++  //    16B  %0:gpr = COPY $x10
++  // The insertion is additionally gated on CallingConv::RPU_KERNEL (0x7c) even
++  // though SIMTMode itself is not.
++  if (SIMTMode && !MF.empty() &&
++      MF.getFunction().getCallingConv() == CallingConv::RPU_KERNEL) {
++    MachineBasicBlock &Entry = MF.front();
++    DebugLoc DL = Entry.empty() ? DebugLoc() : Entry.front().getDebugLoc();
++    auto VSET = BuildMI(Entry, Entry.begin(), DL, TII->get(RISCV::XTsm_VSETSIMT))
++                    .addImm(1);
++    // The vendor's VSET_SIMT is a def of $vl and $vtype (its MIR prints
++    // `implicit-def $vl, implicit-def $vtype`).  This tree's XTsm_VSETSIMT
++    // definition only carries the encoding, so materialise the same implicit
++    // defs here: without them the post-RA scheduler is free to sink vsetsimt
++    // past the vector ops that read $vl/$vtype, which changes the emitted
++    // instruction order.
++    VSET->addOperand(MachineOperand::CreateReg(RISCV::VL, /*isDef=*/true,
++                                               /*isImplicit=*/true));
++    VSET->addOperand(MachineOperand::CreateReg(RISCV::VTYPE, /*isDef=*/true,
++                                               /*isImplicit=*/true));
++    if (LIS)
++      LIS->InsertMachineInstrInMaps(*VSET);
++    if (EnableSIMTMul) {
++      // The vendor derives the SIMTMUL immediate from the (e16, m1) case; all
++      // reproduced RAISA kernels use 0.  It goes after VSET_SIMT.
++      auto SIMTMul =
++          BuildMI(Entry, std::next(VSET->getIterator()), DL,
++                  TII->get(RISCV::XTsm_VSETSIMTMUL))
++              .addImm(0);
++      SIMTMul->addOperand(MachineOperand::CreateReg(RISCV::VL, /*isDef=*/true,
++                                                    /*isImplicit=*/true));
++      SIMTMul->addOperand(MachineOperand::CreateReg(
++          RISCV::VTYPE, /*isDef=*/true, /*isImplicit=*/true));
++      if (LIS)
++        LIS->InsertMachineInstrInMaps(*SIMTMul);
++    }
++  }
++
+   return HaveVectorOp;
+ }
+ 

@@ -1,0 +1,586 @@
+--- /dev/null
++++ b/llvm/lib/Target/RISCV/TX8LegalizeEXEC.cpp
+@@ -0,0 +1,268 @@
++//===-- TX8LegalizeEXEC.cpp - Legalize the TX8/SIMT EXEC lane mask --------===//
++//
++// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
++// See https://llvm.org/LICENSE.txt for license information.
++// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++//
++//===----------------------------------------------------------------------===//
++//
++// TX8LegalizeEXEC is the vendor's post-ISel pass that turns the two "EXEC"
++// pseudos produced by instruction selection into real instructions and puts
++// every vector instruction under the lane mask.  It is the "(B)" EXEC/SIMT-mask
++// family's counterpart to TX8LegalizeCTInstruction and it runs *after*
++// register allocation, right after `riscv-copyelim`:
++//
++//   ... -riscv-insert-vsetvli -riscv-dead-defs ... -riscv-copyelim
++//       -legalize-exec -removeredundantdebugvalues ...
++//
++// (verified with `-mllvm -debug-pass=Structure` on the vendor compiler; the
++// same name is what makes `-print-before/after=legalize-exec` work).
++//
++// Three transformations, each of them reproduced from the vendor's own MIR
++// (`-mllvm -print-before=legalize-exec` / `-print-after=legalize-exec`) and
++// from `-run-pass=legalize-exec` experiments on hand-written MIR:
++//
++// 1. `PseudoRAISA_DIVERGENT <mask>, $rd`  (llvm.riscv.raisa.divergent, i.e.
++//    "set EXEC from the 128-bit mask and return execz") is expanded into
++//
++//        ISETEXEC  <mask>, implicit-def $exec
++//        $rd = MOVEXECZ implicit $exec
++//        $rd = Kcore_Ncc_Read killed $rd
++//
++//    The three instructions are inserted at the *first terminator* of the
++//    block, not at the pseudo's own position -- the vendor's MIR puts them
++//    after whatever followed the pseudo (`probe_sr` in the reconstruction
++//    notes: the `SD` that consumed the old $rd ends up in front of them).
++//    The kill/renamable flags are copied from the pseudo's operands, and the
++//    extra use operand of Kcore_Ncc_Read is a plain `killed` register use of
++//    the same GPR.
++//
++// 2. Every instruction that implicitly *reads* `$vl` (the fork's marker for
++//    "consumes the vector configuration": all RVV pseudos carry
++//    `implicit $vl, implicit $vtype`, and the `PseudoVSETVLI*` forms that
++//    reuse a configuration carry `implicit $vl`) gets an implicit use of
++//    `$exec` added.  This is how the lane mask becomes part of the liveness
++//    and scheduling dependencies.  Verified by experiment: an instruction with
++//    only `implicit $vtype` does *not* get `$exec`, one with `implicit $vl`
++//    does.  (The vendor's register table numbers `$exec` 1 and therefore `$vl`
++//    8, which is the constant the decompiled pass tests with
++//    `hasRegisterImplicitUseOperand(MI, 8)`.)
++//
++// 3. Redundant EXEC writes are dropped.  An `ISETEXEC*` in a block that has no
++//    instruction reading `$vl` (so nothing can observe the mask) is erased
++//    when either it was the block of an expanded `PseudoRAISA_DIVERGENT`
++//    (case 1 above already writes EXEC), or the block has exactly one
++//    successor and that successor writes EXEC itself.
++//
++// `ISETEXEC*` instructions whose mask register is live on block entry are
++// additionally hoisted to the beginning of their block and their `$exec` def
++// loses the `dead` flag, because from that point on the mask is live.
++//
++//===----------------------------------------------------------------------===//
++
++#include "RISCV.h"
++#include "RISCVInstrInfo.h"
++#include "RISCVSubtarget.h"
++#include "llvm/CodeGen/MachineFunctionPass.h"
++#include "llvm/CodeGen/MachineInstrBuilder.h"
++#include "llvm/CodeGen/MachineRegisterInfo.h"
++#include "llvm/InitializePasses.h"
++
++using namespace llvm;
++
++#define DEBUG_TYPE "legalize-exec"
++#define TX8_LEGALIZE_EXEC_NAME "TX8 Legalize EXEC"
++
++namespace {
++
++class TX8LegalizeEXEC : public MachineFunctionPass {
++public:
++  static char ID;
++
++  TX8LegalizeEXEC() : MachineFunctionPass(ID) {
++    initializeTX8LegalizeEXECPass(*PassRegistry::getPassRegistry());
++  }
++
++  bool runOnMachineFunction(MachineFunction &MF) override;
++
++  void getAnalysisUsage(AnalysisUsage &AU) const override {
++    AU.setPreservesCFG();
++    MachineFunctionPass::getAnalysisUsage(AU);
++  }
++
++  StringRef getPassName() const override { return TX8_LEGALIZE_EXEC_NAME; }
++
++private:
++  /// Per-block information gathered while walking the function.
++  struct BlockInfo {
++    /// The last ISETEXEC/ISETEXEC0/ISETEXEC1 of the block, if any.
++    MachineInstr *ExecWrite = nullptr;
++    /// The last PseudoRAISA_DIVERGENT of the block, if any (the vendor's scan
++    /// overwrites its slot, so the last one wins).
++    MachineInstr *Divergent = nullptr;
++    /// True once this block's Divergent was expanded; the vendor re-uses the
++    /// slot for the new ISETEXEC, so a non-null slot is what decides case 3.
++    bool ExpandedDivergent = false;
++    /// True if some instruction of the block implicitly reads `$vl`, i.e. can
++    /// observe the lane mask.
++    bool HasVLReader = false;
++  };
++
++  bool expandDivergent(MachineBasicBlock &MBB, MachineInstr &Div,
++                       const RISCVInstrInfo *TII);
++  void addExecUse(MachineFunction &MF, MachineInstr &MI) const;
++  void clearDeadExecDef(MachineInstr &MI) const;
++};
++
++} // end anonymous namespace
++
++char TX8LegalizeEXEC::ID = 0;
++
++INITIALIZE_PASS(TX8LegalizeEXEC, DEBUG_TYPE, TX8_LEGALIZE_EXEC_NAME, false,
++                false)
++
++/// Add an implicit use of `$exec` to \p MI, exactly the operand
++/// `MachineOperand::CreateReg(RISCV::EXEC, /*isDef=*/false, /*isImplicit=*/true)`
++/// that the vendor's pass builds.
++void TX8LegalizeEXEC::addExecUse(MachineFunction &MF, MachineInstr &MI) const {
++  MI.addOperand(MF, MachineOperand::CreateReg(RISCV::EXEC, /*isDef=*/false,
++                                              /*isImplicit=*/true));
++}
++
++/// Clear the `dead` flag of \p MI's implicit `$exec` def; the vendor does the
++/// same with a `&= ~IsDeadOrKill` on that operand.
++void TX8LegalizeEXEC::clearDeadExecDef(MachineInstr &MI) const {
++  for (MachineOperand &MO : MI.operands())
++    if (MO.isReg() && MO.isDef() && MO.isImplicit() &&
++        MO.getReg() == RISCV::EXEC)
++      MO.setIsDead(false);
++}
++
++/// Expand `$rd = PseudoRAISA_DIVERGENT <mask>, implicit-def $exec` at the first
++/// terminator of \p MBB.
++bool TX8LegalizeEXEC::expandDivergent(MachineBasicBlock &MBB, MachineInstr &Div,
++                                      const RISCVInstrInfo *TII) {
++  const MachineOperand &DefOp = Div.getOperand(0);
++  const MachineOperand &MaskOp = Div.getOperand(1);
++  Register Dst = DefOp.getReg();
++  Register Mask = MaskOp.getReg();
++  DebugLoc DL = Div.getDebugLoc();
++
++  // The GPR result of the pseudo becomes the result of MOVEXECZ and of
++  // Kcore_Ncc_Read, keeping the pseudo's operand flags (`renamable`).
++  unsigned DstFlags = RegState::Define | getRenamableRegState(DefOp.isRenamable());
++  // The mask operand of the new ISETEXEC keeps the pseudo's `killed` and
++  // `renamable` flags.
++  unsigned MaskFlags =
++      getKillRegState(MaskOp.isKill()) | getRenamableRegState(MaskOp.isRenamable());
++
++  MachineBasicBlock::iterator InsertPt = MBB.getFirstTerminator();
++
++  BuildMI(MBB, InsertPt, DL, TII->get(RISCV::XTsm_ISETEXEC))
++      .addReg(Mask, MaskFlags);
++  BuildMI(MBB, InsertPt, DL, TII->get(RISCV::XTsm_MOVEXECZ))
++      .addReg(Dst, DstFlags);
++  BuildMI(MBB, InsertPt, DL, TII->get(RISCV::XTsm_KCORE_NCC_READ))
++      .addReg(Dst, DstFlags)
++      .addReg(Dst, RegState::Kill);
++
++  Div.eraseFromParent();
++  return true;
++}
++
++bool TX8LegalizeEXEC::runOnMachineFunction(MachineFunction &MF) {
++  // The vendor only installs the pass for RAISA device compilation (its
++  // argument never shows up in a `riscv64-unknown-elf` pipeline), so the
++  // feature check is enough to keep it inert elsewhere.
++  if (!MF.getSubtarget<RISCVSubtarget>().hasVendorXTsm82s())
++    return false;
++
++  const RISCVInstrInfo *TII = MF.getSubtarget<RISCVSubtarget>().getInstrInfo();
++
++  SmallVector<BlockInfo, 16> Blocks(MF.getNumBlockIDs());
++  bool Changed = false;
++
++  //===--------------------------------------------------------------------===//
++  // Walk the function once, recording the EXEC-related instructions per block
++  // and adding the `implicit $exec` uses.
++  //===--------------------------------------------------------------------===//
++  for (MachineBasicBlock &MBB : MF) {
++    BlockInfo &BI = Blocks[MBB.getNumber()];
++
++    for (MachineInstr &MI : MBB) {
++      switch (MI.getOpcode()) {
++      case RISCV::XTsm_ISETEXEC:
++      case RISCV::XTsm_ISETEXEC0:
++      case RISCV::XTsm_ISETEXEC1:
++        // Last one wins, like the vendor's loop.
++        BI.ExecWrite = &MI;
++        continue;
++      case RISCV::PseudoRAISA_DIVERGENT:
++        BI.Divergent = &MI;
++        continue;
++      default:
++        break;
++      }
++
++      if (MI.hasRegisterImplicitUseOperand(RISCV::VL)) {
++        addExecUse(MF, MI);
++        BI.HasVLReader = true;
++        Changed = true;
++      }
++    }
++
++    //--- Hoist an EXEC write whose mask is live on entry. ------------------//
++    MachineInstr *Exec = BI.ExecWrite;
++    if (Exec && !MBB.empty() && Exec != &MBB.front()) {
++      bool CanHoist = true;
++      if (Exec->getOpcode() == RISCV::XTsm_ISETEXEC &&
++          Exec->getOperand(0).isReg() &&
++          Exec->getOperand(0).getReg().isValid())
++        // Moving the write above its own definition would break the mask, so
++        // only a mask that is live on entry may be hoisted.
++        CanHoist = MBB.isLiveIn(Exec->getOperand(0).getReg());
++      if (CanHoist) {
++        MBB.splice(MBB.begin(), &MBB, Exec->getIterator());
++        clearDeadExecDef(*Exec);
++        Changed = true;
++      }
++    }
++
++    //--- Expand the divergent pseudo. --------------------------------------//
++    if (BI.Divergent) {
++      expandDivergent(MBB, *BI.Divergent, TII);
++      BI.Divergent = nullptr;
++      BI.ExpandedDivergent = true;
++      Changed = true;
++    }
++  }
++
++  //===--------------------------------------------------------------------===//
++  // Drop redundant EXEC writes.
++  //===--------------------------------------------------------------------===//
++  for (MachineBasicBlock &MBB : MF) {
++    BlockInfo &BI = Blocks[MBB.getNumber()];
++    if (!BI.ExecWrite || BI.HasVLReader)
++      continue;
++
++    if (!BI.ExpandedDivergent) {
++      // Nothing in this block reads the mask; the only case where the write is
++      // still redundant is when the single successor writes EXEC itself.
++      if (MBB.succ_size() != 1)
++        continue;
++      MachineBasicBlock *Succ = *MBB.succ_begin();
++      if (!Blocks[Succ->getNumber()].ExecWrite)
++        continue;
++    }
++
++    BI.ExecWrite->eraseFromParent();
++    BI.ExecWrite = nullptr;
++    Changed = true;
++  }
++
++  return Changed;
++}
++
++FunctionPass *llvm::createTX8LegalizeEXECPass() {
++  return new TX8LegalizeEXEC();
++}
+--- a/llvm/lib/Target/RISCV/RISCVInstrInfoXTsm82s.td
++++ b/llvm/lib/Target/RISCV/RISCVInstrInfoXTsm82s.td
+@@ -19,8 +19,16 @@
+ //===----------------------------------------------------------------------===//
+ // XTsm82s scalar/stream (SR) register file: sr0..sr31
+ //
+-// These registers live in the 5-bit operand slots but are not part of
+-// the integer register file, so the class is not allocatable.
++// Each SR register is one 128-bit SIMT mask.  Together with `$exec` this is the
++// register file that carries the "(B)" EXEC/mask family:
++//
++//     <1 x i128> and_s / nor_s / mov128.s.v   ->  def SR
++//     isetexec                                ->  use  SR, def $exec
++//
++// The values are real allocatable values (the vendor's post-RA MIR shows them
++// in $s0/$s1...), so the class is allocatable and its register info is 128 bits
++// wide -- the reconstructed asm layer had it as a non-allocatable `untyped`
++// class because nothing selected into it yet.
+ //===----------------------------------------------------------------------===//
+ 
+ foreach Index = 0-31 in {
+@@ -28,10 +36,14 @@
+                  DwarfRegNum<[!add(Index, 3104)]>;
+ }
+ 
+-let RegInfos = XLenRI in
+-def SR : RISCVRegisterClass<[untyped], 32,
++def XTsmSRRI : RegInfoByHwMode<[RV32, RV64],
++                               [RegInfo<128, 128, 128>,
++                                RegInfo<128, 128, 128>]>;
++
++let RegInfos = XTsmSRRI in
++def SR : RISCVRegisterClass<[v1i128], 128,
+                              (add (sequence "SR%u", 0, 31))> {
+-  let isAllocatable = 0;
++  let isAllocatable = 1;
+ }
+ 
+ // 5-bit unsigned immediate used by the XTsm82s immediate forms.
+@@ -345,14 +357,32 @@
+   let Inst{19-0} = 0b10000111000001111011;
+   let Inst{31-25} = 0b1011111;
+   let Inst{24-20} = vs2;
++  // Writing the lane mask is the whole point of the instruction, so it must
++  // survive DCE even when the result is unused (the vendor's MIR keeps
++  // `ISETEXEC ..., implicit-def dead $exec`), and it defines `$exec` just like
++  // the vendor's own definition does.
++  let Defs = [EXEC];
++  let hasSideEffects = 1;
++  // `llvm.riscv.set.exec*` are IntrInaccessibleMemOnly; TableGen requires the
++  // selected instruction to declare the matching memory effects.
++  let mayLoad = 1;
++  let mayStore = 1;
+ }
+ 
+ def XTsm_ISETEXEC0 : XTsm82sInst<(outs), (ins), "isetexec0", "", [HasVendorXTsm82s]> {
+   let Inst{31-0} = 0b10111110000000000111000001111011;
++  let Defs = [EXEC];
++  let hasSideEffects = 1;
++  let mayLoad = 1;
++  let mayStore = 1;
+ }
+ 
+ def XTsm_ISETEXEC1 : XTsm82sInst<(outs), (ins), "isetexec1", "", [HasVendorXTsm82s]> {
+   let Inst{31-0} = 0b10111110000000001111000001111011;
++  let Defs = [EXEC];
++  let hasSideEffects = 1;
++  let mayLoad = 1;
++  let mayStore = 1;
+ }
+ 
+ def XTsm_KCORE_NCC_READ : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2), "kcore_ncc_read", "$rd, $rs2", [HasVendorXTsm82s]> {
+@@ -847,6 +877,10 @@
+   let Inst{6-0} = 0b1111011;
+   let Inst{31-12} = 0b11110110000000000001;
+   let Inst{11-7} = rd;
++  // `movexecz rd` reads the zero-ness of the current lane mask, exactly as the
++  // vendor's MIR prints it: `$x10 = MOVEXECZ implicit $exec`.
++  let Uses = [EXEC];
++  let hasSideEffects = 1;
+ }
+ 
+ def XTsm_MV128_S_V : XTsm82sInst<(outs SR:$vd), (ins VR:$vs2), "mv128.s.v", "$vd, $vs2", [HasVendorXTsm82s]> {
+@@ -4424,3 +4458,101 @@
+ def : InstAlias<"vneg.v $vd, $vs",
+                 (XTsm_VRSUB_VX VR:$vd, VR:$vs, X0, zero_reg)>;
+ 
++
++//===----------------------------------------------------------------------===//
++// EXEC / SIMT-mask family ("(B)"): pseudos
++//
++// The vendor lowers the fork's EXEC/mask intrinsics in three steps; this tree
++// reproduces the same three steps, so the instruction stream matches:
++//
++//   1. ISel (RISCVISelDAGToDAG.cpp) -- `llvm.riscv.and.s` & friends become the
++//      real XTsm pseudo/mask instructions, while the two intrinsics that need
++//      a later pass become the pseudos below.
++//   2. pre-RA (RISCVExpandPseudoInsts.cpp) -- PseudoRAISA_GET_KERNEL_ENTRY_EXEC
++//      becomes `PseudoVMSNE_VV_M1` with all-undef operands, i.e. an all-zero
++//      b32 vector (`vmsne.vv vd, vd, vd`).  It has to happen before
++//      RISCVInsertVSETVLI so that the pass configures e32/m1 for it.
++//   3. post-RA (TX8LegalizeEXEC.cpp) -- PseudoRAISA_DIVERGENT becomes
++//         ISETEXEC <mask>, implicit-def $exec
++//         $rd = MOVEXECZ implicit $exec
++//         $rd = Kcore_Ncc_Read killed $rd
++//      and every instruction that implicitly reads `$vl` gets an implicit use
++//      of `$exec` added.
++//
++// PseudoRAISA_DIVERGENT deliberately survives until post-RA: the vendor only
++// creates the ISETEXEC/MOVEXECZ pair once the mask is in its final physical
++// register, so that the kill flags on the mask operand can be dropped.
++//===----------------------------------------------------------------------===//
++
++// `llvm.riscv.raisa.divergent`: set EXEC from a 128-bit mask and return
++// "no lane left active" (execz).  raisa.divergent is IntrNoMem +
++// IntrHasSideEffects, hence hasSideEffects = 1.
++let isPseudo = 1, hasSideEffects = 1, mayLoad = 0, mayStore = 0 in
++def PseudoRAISA_DIVERGENT : Pseudo<(outs GPR:$rd), (ins SR:$vs2), []>;
++
++// `llvm.riscv.raisa.get.kernel.entry.exec` is an *overloaded* intrinsic
++// (`llvm_anyvector_ty`) with no operands, so its result type can only be
++// inferred from the pattern's destination register class.  The generic `VR`
++// class holds dozens of vector types and TableGen refuses to guess, so the
++// mask result uses this single-type view of `VR` instead: same registers in
++// the same allocation order, only narrower in type.  The instruction that
++// replaces it (`PseudoVMSNE_VV_M1`) is defined on `VR`, which this class is a
++// subclass of.
++def VTXExecMask : VReg<[vbool32_t],
++                       (add (sequence "V%u", 8, 31),
++                            (sequence "V%u", 0, 7)), 1>;
++
++// `llvm.riscv.raisa.get.kernel.entry.exec`: the lane mask the kernel starts
++// with.  IntrNoMem + IntrConvergent, so hasSideEffects = 0.
++let isPseudo = 1, hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++def PseudoRAISA_GET_KERNEL_ENTRY_EXEC : Pseudo<(outs VTXExecMask:$vd), (ins), []>;
++
++//===----------------------------------------------------------------------===//
++// EXEC / SIMT-mask family ("(B)"): instruction selection
++//
++// `v1i128` (the `<1 x i128>` the fork's mask intrinsics use) is mapped to the
++// SR register class in RISCVISelLowering.cpp, which is what makes these
++// patterns reachable at all.
++//===----------------------------------------------------------------------===//
++let Predicates = [HasVendorXTsm82s] in {
++
++// <1 x i128> = llvm.riscv.mov128.s.x(i64, i64)
++def : Pat<(int_riscv_mov128_s_x GPR:$rs2, GPR:$rs1),
++          (XTsm_MV128_S_X GPR:$rs2, GPR:$rs1)>;
++
++// <1 x i128> = llvm.riscv.mov128.s.v(<vscale x 2 x i1>)  -- the mask lives in
++// the b32 vector register the mov128 reads.
++def : Pat<(int_riscv_mov128_s_v vbool32_t:$vs2),
++          (XTsm_MV128_S_V VR:$vs2)>;
++
++// The SIMT binary ops on 128-bit masks.
++def : Pat<(int_riscv_and_s v1i128:$vs2, v1i128:$vs1),
++          (XTsm_AND_SS SR:$vs2, SR:$vs1)>;
++def : Pat<(int_riscv_or_s v1i128:$vs2, v1i128:$vs1),
++          (XTsm_OR_SS SR:$vs2, SR:$vs1)>;
++def : Pat<(int_riscv_xor_s v1i128:$vs2, v1i128:$vs1),
++          (XTsm_XOR_SS SR:$vs2, SR:$vs1)>;
++def : Pat<(int_riscv_andn_s v1i128:$vs2, v1i128:$vs1),
++          (XTsm_ANDN_SS SR:$vs2, SR:$vs1)>;
++def : Pat<(int_riscv_orn_s v1i128:$vs2, v1i128:$vs1),
++          (XTsm_ORN_SS SR:$vs2, SR:$vs1)>;
++def : Pat<(int_riscv_nand_s v1i128:$vs2, v1i128:$vs1),
++          (XTsm_NAND_SS SR:$vs2, SR:$vs1)>;
++def : Pat<(int_riscv_nor_s v1i128:$vs2, v1i128:$vs1),
++          (XTsm_NOR_SS SR:$vs2, SR:$vs1)>;
++def : Pat<(int_riscv_xnor_s v1i128:$vs2, v1i128:$vs1),
++          (XTsm_XNOR_SS SR:$vs2, SR:$vs1)>;
++
++// void llvm.riscv.set.exec(<1 x i128>)
++def : Pat<(int_riscv_set_exec v1i128:$vs2), (XTsm_ISETEXEC SR:$vs2)>;
++
++// i64 = llvm.riscv.raisa.divergent(<1 x i128>); finished by TX8LegalizeEXEC.
++def : Pat<(int_riscv_raisa_divergent v1i128:$vs2),
++          (PseudoRAISA_DIVERGENT SR:$vs2)>;
++
++// <vscale x 2 x i1> = llvm.riscv.raisa.get.kernel.entry.exec();
++// finished by RISCVPreRAExpandPseudo.
++def : Pat<(int_riscv_raisa_get_kernel_entry_exec),
++          (PseudoRAISA_GET_KERNEL_ENTRY_EXEC)>;
++
++} // Predicates = [HasVendorXTsm82s]
+--- a/llvm/lib/Target/RISCV/RISCVRegisterInfo.td
++++ b/llvm/lib/Target/RISCV/RISCVRegisterInfo.td
+@@ -857,6 +857,22 @@
+ def XFRM      : RISCVReg<0, "xfrm">;
+ def MEM_ALLOC : RISCVReg<0, "mem_alloc">;
+ 
++// TX8/RAISA SIMT execution mask (the "(B)" EXEC family, line `wt-exec`).
++//
++// `$exec` is the lane-predicate state that every vector instruction executes
++// under.  It has no encoding of its own and belongs to no register class, so it
++// is only ever named through implicit operands:
++//   * ISETEXEC/ISETEXEC0/ISETEXEC1 define it (RISCVInstrInfoXTsm82s.td),
++//   * MOVEXECZ reads it,
++//   * TX8LegalizeEXEC adds an implicit use of it to every instruction that
++//     consumes the vector configuration (`implicit $vl`), which is what the
++//     vendor's post-ISel pass does and what its MIR shows.
++// The vendor numbers it directly after NoRegister, i.e. EXEC == 1, which shifts
++// `vl` to 8 -- exactly the constant the decompiled pass tests with
++// `hasRegisterImplicitUseOperand(MI, 8)`.  It is declared here, ahead of the
++// other CSR-like registers, for that reason.
++def EXEC      : RISCVReg<0, "exec">;
++
+ // Shadow Stack register
+ def SSP    : RISCVReg<0, "ssp">;
+ 
+--- a/llvm/lib/Target/RISCV/RISCVISelLowering.cpp
++++ b/llvm/lib/Target/RISCV/RISCVISelLowering.cpp
+@@ -278,6 +278,21 @@
+     addRegisterClass(MVT::riscv_nxv32i8x2, &RISCV::VRN2M4RegClass);
+   }
+ 
++  // TX82 (wt-exec line): the "(B)" EXEC/SIMT-mask family moves 128-bit lane
++  // masks around in the `SR` register file (`llvm.riscv.and.s`,
++  // `llvm.riscv.nor.s`, `llvm.riscv.mov128.s.*`, `llvm.riscv.set.exec`,
++  // `llvm.riscv.raisa.divergent` all take or return `<1 x i128>`).  Making
++  // v1i128 legal is what stops SelectionDAG from asking the target to
++  // custom-type-legalize those intrinsics ("Don't know how to custom type
++  // legalize this intrinsic!", RISCVISelLowering.cpp ReplaceNodeResults).
++  // The vendor's `srf128` register class is exactly this mapping; the
++  // intrinsics themselves are selected by the Pat<> patterns in
++  // RISCVInstrInfoXTsm82s.td.
++  // NOTE (wt-exec line): this is the only hunk this line needs in a file that
++  // the E line also edits, and it is deliberately two lines.
++  if (STI.hasVendorXTsm82s())
++    addRegisterClass(MVT::v1i128, &RISCV::SRRegClass);
++
+   // Compute derived properties from the register classes.
+   computeRegisterProperties(STI.getRegisterInfo());
+ 
+--- a/llvm/lib/Target/RISCV/RISCVExpandPseudoInsts.cpp
++++ b/llvm/lib/Target/RISCV/RISCVExpandPseudoInsts.cpp
+@@ -554,6 +554,28 @@
+     return expandLoadTLSGDAddress(MBB, MBBI, NextMBBI);
+   case RISCV::PseudoLA_TLSDESC:
+     return expandLoadTLSDescAddress(MBB, MBBI, NextMBBI);
++  case RISCV::PseudoRAISA_GET_KERNEL_ENTRY_EXEC: {
++    // TX82 (wt-exec line): `llvm.riscv.raisa.get.kernel.entry.exec` is the lane
++    // mask a SIMT kernel starts with.  The vendor materialises it as an
++    // all-zero b32 vector, `vmsne.vv vd, vd, vd`, with every operand undef --
++    // its MIR is
++    //     $v9 = PseudoVMSNE_VV_M1 undef $v9, undef $v9, -1, 5
++    // -- and the `nor.s` the IR itself contains then turns that into the
++    // all-ones entry mask.  The expansion has to happen before
++    // RISCVInsertVSETVLI so that the pass computes an e32/m1 configuration for
++    // it (the vendor expands it inside that pass instead; the resulting
++    // instruction sequence is the same).
++    Register Dst = MBBI->getOperand(0).getReg();
++    DebugLoc DL = MBBI->getDebugLoc();
++    BuildMI(MBB, MBBI, DL, TII->get(RISCV::PseudoVMSNE_VV_M1), Dst)
++        .addReg(Dst, RegState::Undef)
++        .addReg(Dst, RegState::Undef)
++        .addImm(-1) // VL: unknown, RISCVInsertVSETVLI decides
++        .addImm(5); // log2(SEW) == e32
++    NextMBBI = std::next(MBBI);
++    MBBI->eraseFromParent();
++    return true;
++  }
+   }
+   return false;
+ }
+--- a/llvm/lib/Target/RISCV/RISCV.h
++++ b/llvm/lib/Target/RISCV/RISCV.h
+@@ -124,6 +124,10 @@
+ ModulePass *createTX8TransformSIMTToSIMDPass();
+ void initializeTX8TransformSIMTToSIMDPass(PassRegistry &);
+ 
++// TX8LegalizeEXEC.cpp -- post-RA legalization of the SIMT EXEC lane mask.
++FunctionPass *createTX8LegalizeEXECPass();
++void initializeTX8LegalizeEXECPass(PassRegistry &);
++
+ FunctionPass *createTX8RegisterRenamePass();
+ void initializeTX8RegisterRenamePass(PassRegistry &);
+ bool isTX8VRegRenameEnabled();
+--- a/llvm/lib/Target/RISCV/CMakeLists.txt
++++ b/llvm/lib/Target/RISCV/CMakeLists.txt
+@@ -65,6 +65,7 @@
+   RISCVTargetMachine.cpp
+   RISCVTargetObjectFile.cpp
+   TX8InsertXFRM.cpp
++  TX8LegalizeEXEC.cpp
+   TX8TransformSIMTToSIMD.cpp
+   TX8RegisterRename.cpp
+   RISCVTargetTransformInfo.cpp
+--- a/llvm/lib/Target/RISCV/RISCVTargetMachine.cpp
++++ b/llvm/lib/Target/RISCV/RISCVTargetMachine.cpp
+@@ -142,6 +142,9 @@
+   initializeRISCVVectorPeepholePass(*PR);
+   initializeRISCVVLOptimizerPass(*PR);
+   initializeTX8InsertXFRMPass(*PR);
++  // wt-exec line: the vendor runs `legalize-exec` after `riscv-copyelim`, i.e.
++  // in addPostRegAlloc() below.
++  initializeTX8LegalizeEXECPass(*PR);
+   initializeTX8TransformSIMTToSIMDPass(*PR);
+   initializeRISCVVMV0EliminationPass(*PR);
+   initializeRISCVInsertVSETVLIPass(*PR);
+@@ -682,6 +685,14 @@
+   if (TM->getOptLevel() != CodeGenOptLevel::None &&
+       EnableRedundantCopyElimination)
+     addPass(createRISCVRedundantCopyEliminationPass());
++
++  // TX82 (wt-exec line): legalize the SIMT EXEC lane mask for RAISA device
++  // kernels.  The vendor's pipeline puts `legalize-exec` immediately after
++  // `riscv-copyelim` (`-mllvm -debug-pass=Structure`), i.e. after register
++  // allocation and after the post-RA copy propagation, and before the
++  // post-RA pseudo expansion that lowers the RVV pseudos.
++  if (TM->getTargetTriple().isRaisa())
++    addPass(createTX8LegalizeEXECPass());
+ }
+ 
+ void RISCVTargetMachine::registerPassBuilderCallbacks(PassBuilder &PB) {

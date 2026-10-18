@@ -1,0 +1,58 @@
+# 1026: reproduce the vendor's `kcore_ncc_read` lowering shape (C++ Select()).
+#
+# Pre-image: this tree at 00:50 (1024 + 1025 applied), RISCVISelDAGToDAG.cpp as
+#            of that point.
+# Replay:    cd <tree>/src && patch -p1 < this.patch   (verified byte-exact)
+#
+# The vendor drops the argument's *value* but still consumes it:
+#   finalize-isel MIR (vendor)          asm
+#   %0:gpr = COPY $x10                  (arg)
+#   $x0    = COPY %0:gpr                mv zero, a0
+#   %1:gpr = Kcore_Ncc_Read $x0         kcore_ncc_read a1, zero
+#   $x10   = COPY %1:gpr                mv a0, a1
+# Our old TableGen Pat passed the argument straight into `rs2`
+#   def : Pat<(int_riscv_kcore_ncc_read GPR:$rs2), (XTsm_KCORE_NCC_READ GPR:$rs2)>
+# which selects `kcore_ncc_read a0, a0` (the argument register reused for both
+# slots).  TableGen cannot express "drop the named input" ("Pattern has dead
+# named input"), so the shape is built in RISCVDAGToDAGISel::Select:
+# copy the argument to `$x0` (kept alive/unordered by routing the intrinsic's
+# chain through it) and read `$x0`.
+#
+# Effect: `.c` cell `builtin_builtin_riscv_kcore_ncc_read` — asm/MIR now
+#   identical to the vendor after normalization (the only residual is the
+#   `# %bb.0: # %entry` comment, which the parity caliber strips).
+#   Reference the instruction name difference (`XTsm_KCORE_NCC_READ` vs
+#   `Kcore_Ncc_Read`) is the documented one.
+#
+--- a/llvm/lib/Target/RISCV/RISCVISelDAGToDAG.cpp
++++ b/llvm/lib/Target/RISCV/RISCVISelDAGToDAG.cpp
+@@ -2159,6 +2159,29 @@
+       // By default we do not custom select any intrinsic.
+     default:
+       break;
++    // Fork: llvm.riscv.kcore_ncc_read.  The vendor drops the argument's value
++    // but still consumes it: it copies the argument into `$x0` and reads `$x0`
++    // in the `rs2` slot.  `finalize-isel` MIR (vendor):
++    //   %0:gpr = COPY $x10        ; the argument
++    //   $x0    = COPY %0:gpr      ; the vendor's copy, dead in value terms
++    //   %1:gpr = Kcore_Ncc_Read $x0
++    //   $x10   = COPY %1:gpr
++    // and the asm is `kcore_ncc_read a1, zero` / `mv zero, a0` / `mv a0, a1`.
++    // TableGen cannot express this (the named input would be dead:
++    // "Pattern has dead named input"), hence the C++ shape.  The copy is kept
++    // alive by routing the intrinsic's chain through it, which is also what
++    // orders it before the read.
++    case Intrinsic::riscv_kcore_ncc_read: {
++      SDValue Arg = Node->getOperand(2);
++      SDValue Copy =
++          CurDAG->getCopyToReg(Node->getOperand(0), DL, RISCV::X0, Arg);
++      SDValue Ops[] = {CurDAG->getRegister(RISCV::X0, MVT::i64)};
++      MachineSDNode *Read = CurDAG->getMachineNode(
++          RISCV::XTsm_KCORE_NCC_READ, DL, Node->getVTList(), Ops);
++      ReplaceNode(Node, Read);
++      ReplaceUses(SDValue(Read, 1), Copy);
++      return;
++    }
+     case Intrinsic::riscv_vlseg2:
+     case Intrinsic::riscv_vlseg3:
+     case Intrinsic::riscv_vlseg4:

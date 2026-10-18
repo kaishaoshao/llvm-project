@@ -1,0 +1,520 @@
+--- a/llvm/lib/Target/RISCV/RISCVTargetMachine.cpp
++++ b/llvm/lib/Target/RISCV/RISCVTargetMachine.cpp
+@@ -537,20 +537,45 @@
+     // the loop passes and *before* `simt2simd`, which `-mllvm
+     // -print-before=config-instr-opt -mllvm -print-before=simt2simd` confirms.
+     addPass(createTX8OptimizeConfigInstrsPass());
+-    // The vendor's `-mllvm -debug-pass=Structure` order is
+-    //   ... -structurizecfg -loops -cycles -uniformity
++    // The vendor's `-mllvm -debug-pass=Structure` order (verbatim) is
++    //   ... -rpu-unify-divergent-exit-nodes -domtree -cycles -fix-irreducible
++    //   -loops -unify-loop-exits -postdomtree -domfrontier -regions
++    //   -structurizecfg -loops -cycles -uniformity
+     //   -tx8-annotate-control-flow -simt2simd -domtree -early-cse
+     //   -rpu-lower-shared ...
+-    // i.e. the control-flow annotation runs immediately before `simt2simd`.
+-    // It has to: `simt2simd` may only vectorise kernels whose branches are
+-    // uniform, and the annotation is what turns a lane-dependent `br` into a
+-    // `raisa.divergent` query.  (`rpu-unify-divergent-exit-nodes` and
+-    // `structurizecfg`, which the vendor runs just before it, are MIR/IR
+-    // no-ops for every cell of the round-2 corpus -- verified with
+-    // `-print-before=rpu-unify-divergent-exit-nodes` /
+-    // `-print-before=structurizecfg` / `-print-before=tx8-annotate-control-flow`
+-    // on `control_nested` and `control_early_return` -- so they are not
+-    // ported.)
++    // i.e. a verbatim copy of the AMDGPU divergence stack
++    // (`AMDGPUUnifyDivergentExitNodes`, `FixIrreducible`, `UnifyLoopExits`,
++    // `StructurizeCFG`, `SIAnnotateControlFlow`), with only the annotation pass
++    // replaced by the fork's own.
++    //
++    // `structurizecfg` is *not* optional: `simt2simd` only vectorises kernels
++    // whose regions have been structurized into a single exit, and the
++    // annotation pass merely *follows* whatever CFG it is handed (a region is
++    // closed by emitting `set.exec` at the block that was pushed).  Without it
++    // the two `control_*_loop` cells keep their multi-exit CFG, the annotation
++    // puts its `set.exec` in the loop body instead of in the vendor's `Flow`
++    // blocks, `simt2simd` bails and the surviving `llvm.riscv.read.reg.*` kills
++    // ISel ("Don't know how to custom type legalize this intrinsic!").
++    // Evidence: vendor `-print-before/after=structurizecfg` vs our
++    // `-print-after=tx8-annotate-control-flow` dumps on those two cells.
++    //
++    // The three passes the vendor runs *before* it are pure no-ops on every
++    // multi-block cell of the corpus (vendor `-print-before/after` of
++    // `rpu-unify-divergent-exit-nodes`, `fix-irreducible` and
++    // `unify-loop-exits` on `control_divergent_loop`, `control_uniform_loop`,
++    // `control_nested` and `control_early_return`: every dump is byte-identical
++    // to its input), so they stay unported.  (The note that used to be here
++    // claimed `structurizecfg` itself was a no-op; that was measured on
++    // `control_nested`/`control_early_return` only, whose regions have a single
++    // exit to begin with.)
++    //
++    // Blast radius is structural, not sampled: upstream `StructurizeCFG::run`
++    // returns immediately for the top-level region, so a single-basic-block
++    // kernel cannot be touched.  Exactly 4 of the 114 `.rc` cells have more
++    // than one basic block before `simt2simd` (the two `control_*_loop` cells,
++    // `control_nested`, `control_early_return`); the other 110 are single-BB
++    // and therefore provably unaffected.
++    addPass(createStructurizeCFGPass());
+     addPass(createTX8AnnotateControlFlowLegacyPass());
+     addPass(createTX8TransformSIMTToSIMDPass());
+     // The vendor's pipeline runs `-domtree -early-cse` between `simt2simd` and
+--- a/llvm/lib/Target/RISCV/TX8TransformSIMTToSIMD.cpp
++++ b/llvm/lib/Target/RISCV/TX8TransformSIMTToSIMD.cpp
+@@ -330,6 +330,44 @@
+   return GEP->getOperand(1) == Tid;
+ }
+ 
++/// Decompose a *parameter-pointer* lane address into the byte pointer whose
++/// per-lane address is `Base + L * <element bytes> + Off`.
++///
++/// Two shapes are attested, the second chained arbitrarily by the unrolled
++/// loop bodies of `control_{divergent,uniform}_loop`:
++///   %b = getelementptr i32, ptr %p, i32 %tid        ; Base = %p,  Off = 0
++///   %a = getelementptr i8,  ptr %b, i32 <const>     ; Base = %p,  Off = <const>
++/// The vendored pass turns the first into a unit-stride `vle` from `%p` (the
++/// lanes are contiguous) and every other one into a `vluxei.sync` gather whose
++/// per-lane index vector is `vslh(Base_low + lane_bytes + Off, Base_high)`.
++static bool laneAddrOf(const Value *Ptr, const Value *Tid, Value *&Base,
++                       uint64_t &Off) {
++  const auto *GEP = dyn_cast<GetElementPtrInst>(Ptr);
++  if (!GEP)
++    return false;
++  if (indexedByTid(GEP, Tid)) {
++    Base = const_cast<Value *>(GEP->getPointerOperand());
++    Off = 0;
++    return true;
++  }
++  // A constant byte offset on top of another lane address.  Only `i8` GEPs are
++  // folded (`getelementptr i32, ptr %b, i32 C` would need the element size).
++  if (GEP->getNumOperands() == 2 &&
++      GEP->getSourceElementType()->isIntegerTy(8)) {
++    const auto *C = dyn_cast<ConstantInt>(GEP->getOperand(1));
++    if (!C)
++      return false;
++    Value *Inner = nullptr;
++    uint64_t InnerOff = 0;
++    if (!laneAddrOf(GEP->getPointerOperand(), Tid, Inner, InnerOff))
++      return false;
++    Base = Inner;
++    Off = InnerOff + C->getSExtValue();
++    return true;
++  }
++  return false;
++}
++
+ /// The address spaces the vendor's pass treats as tile memory: the fork
+ /// replaced CUDA's `__shared__` with one attribute per space, and
+ /// `clang/lib/Basic/Targets/RISCV.h` maps raisa_{l1,l0a,l0w}shared onto 2 / 3 /
+@@ -444,6 +482,11 @@
+ static const char *vectorCmpName(CmpInst::Predicate P) {
+   switch (P) {
+   case CmpInst::ICMP_EQ:  return "vmseq";
++  // `structurizecfg` inverts every exit condition it rewrites (`icmp eq` ->
++  // `icmp ne`), so the loop cells branch on `ne` -- the vendor's after-pass IR
++  // has `vmsne` for exactly those (`control_divergent_loop`:
++  //   %12 = call <vscale x 2 x i1> @llvm.riscv.vmsne.nxv2i32.i32.i64(%11, 0, 128)
++  case CmpInst::ICMP_NE:  return "vmsne";
+   case CmpInst::ICMP_ULT: return "vmsltu";
+   default:                return nullptr;
+   }
+@@ -775,14 +818,78 @@
+   SmallPtrSet<Value *, 16> WillMap, Vectorised, Uniform;
+   for (Argument &A : F.args())
+     Uniform.insert(&A);  // the packed parameter block
++  // The classification below runs to a **fixpoint**, not as a single sweep:
++  // once `structurizecfg` has run, a `Flow` block's phi and the instructions
++  // that feed it are each other's operands across the loop back edge
++  // (`for.cond.cleanup`'s accumulator phi is fed by a `Flow` block that comes
++  // later in program order), so a single program-order sweep cannot decide
++  // them.  Every sweep re-tries the instructions it could not decide yet; the
++  // loop ends as soon as a sweep decides nothing new, and anything still
++  // undecided at that point makes the whole function bail out.
++  while (true) {
++  unsigned Classified = WillMap.size() + Vectorised.size() + Uniform.size();
++  bool Unclassified = false;
+   for (BasicBlock &BB : F) {
+    for (Instruction &I : BB) {
++    if (auto *PN = dyn_cast<PHINode>(&I)) {
++      // PHIs are what `structurizecfg` leaves behind: every `Flow` block (and
++      // the loop exit block) merges two paths with a phi.  The split is the
++      // vendor's: a phi of a *lane* value becomes a vector phi of the lane
++      // vector type (`control_{divergent,uniform}_loop`'s accumulator `v`),
++      // while the induction variables and the LCSSA carries stay scalar and
++      // are splatted where they are stored.  A phi with an operand that is
++      // still undecided is retried on the next sweep (`Unclassified`); a phi
++      // that mixes lane and uniform operands has no evidence and is rejected.
++      bool CanVec = PN->getType() == ElemTy, CanUni = true, Pending = false;
++      for (Value *V : PN->incoming_values()) {
++        if (isa<UndefValue>(V) || isa<PoisonValue>(V))
++          continue;  // type-agnostic: stays `undef`/`poison` either way
++        if (isa<Constant>(V)) {
++          if (V->getType() != ElemTy && PN->getType() == ElemTy)
++            CanVec = false;  // only a splat of the lane type is understood
++          continue;
++        }
++        if (Vectorised.count(V)) {
++          CanUni = false;
++          continue;
++        }
++        if (Uniform.count(V)) {
++          CanVec = false;
++          continue;
++        }
++        Pending = true;
++      }
++      if (Pending) {
++        Unclassified = true;
++        continue;
++      }
++      if (CanUni) {
++        WillMap.insert(PN);
++        Uniform.insert(PN);
++        continue;
++      }
++      if (CanVec) {
++        WillMap.insert(PN);
++        Vectorised.insert(PN);
++        continue;
++      }
++      Unclassified = true;
++      continue;
++    }
+     if (auto *LI = dyn_cast<LoadInst>(&I)) {
+       if (isPackedParamLoad(LI)) {
+         Uniform.insert(LI);  // pass-created parameter unpacking
+         continue;
+       }
+-      if (indexedByTid(LI->getPointerOperand(), Tid) && LI->getType() == ElemTy) {
++      Value *LaneBase = nullptr;
++      uint64_t LaneOff = 0;
++      // A tid-indexed lane load (or one carrying a constant byte offset on top
++      // of it).  The offset chunks are gathered with an `i32`-spelled `vslh`,
++      // so that half of the family is limited to 32-bit lanes; the offset-0
++      // chunk is a plain `vle` and applies to every element type.
++      if (LI->getType() == ElemTy &&
++          laneAddrOf(LI->getPointerOperand(), Tid, LaneBase, LaneOff) &&
++          (LaneOff == 0 || ElemTy->isIntegerTy(32))) {
+         WillMap.insert(LI);
+         Vectorised.insert(LI);
+         continue;
+@@ -798,7 +905,8 @@
+         Vectorised.insert(LI);
+         continue;
+       }
+-      return false;
++      Unclassified = true;
++      continue;
+     }
+     if (auto *SI = dyn_cast<StoreInst>(&I)) {
+       if (indexedByTid(SI->getPointerOperand(), Tid) &&
+@@ -819,12 +927,15 @@
+                  : isa<ConstantInt>(V)))
+           continue;
+       }
+-      return false;
++      Unclassified = true;
++      continue;
+     }
+     if (auto *CI = dyn_cast<CallInst>(&I)) {
+       Function *Callee = CI->getCalledFunction();
+-      if (!Callee)
+-        return false;
++      if (!Callee) {
++        Unclassified = true;
++        continue;
++      }
+       if (const ReadRegMap *RM = lookupReadReg(Callee->getIntrinsicID())) {
+         WillMap.insert(CI);
+         // `tid.x` becomes `vid` only when it is used as a value; the uniform
+@@ -842,8 +953,10 @@
+         // comparison turned into (`control_nested`: `%cmp = icmp ult %tid, %n`
+         // -> `vmsltu` -> `mov128.s.v`), i.e. a 128-bit scalar mask either way.
+         if (CI->arg_size() != 1 ||
+-            !Vectorised.count(CI->getArgOperand(0)))
+-          return false;
++            !Vectorised.count(CI->getArgOperand(0))) {
++          Unclassified = true;
++          continue;
++        }
+         WillMap.insert(CI);
+         Vectorised.insert(CI);
+         continue;
+@@ -852,18 +965,28 @@
+         // Left verbatim; every operand must already be a value this pass keeps
+         // (a constant, an argument, or something it maps without changing the
+         // 128-bit-mask shape).
++        bool OperandsKnown = true;
+         for (Value *A : CI->args())
+           if (!isa<Constant>(A) && !WillMap.count(A))
+-            return false;
++            OperandsKnown = false;
++        if (!OperandsKnown) {
++          Unclassified = true;
++          continue;
++        }
+         WillMap.insert(CI);
+         Uniform.insert(CI);
+         continue;
+       }
+-      if (!isSupportedScalar(Callee->getIntrinsicID()))
+-        return false;
++      if (!isSupportedScalar(Callee->getIntrinsicID())) {
++        Unclassified = true;
++        continue;
++      }
+       if (Callee->getIntrinsicID() == Intrinsic::experimental_constrained_fadd &&
+-          !frmFromMetadata(CI->getArgOperand(2)))
+-        return false;
++          !frmFromMetadata(CI->getArgOperand(2))) {
++        Unclassified = true;
++        continue;
++      }
++      bool OperandsKnown = true;
+       for (Value *A : CI->args()) {
+         if (isa<MetadataAsValue>(A))  // constrained-FP rounding/fpexcept operands
+           continue;
+@@ -871,7 +994,11 @@
+         // a scalar operand (`vadd.nxv2i32.i32.i64`) for the mixed shapes, which
+         // is a different family.
+         if (!Vectorised.count(A))
+-          return false;
++          OperandsKnown = false;
++      }
++      if (!OperandsKnown) {
++        Unclassified = true;
++        continue;
+       }
+       WillMap.insert(CI);
+       Vectorised.insert(CI);
+@@ -932,9 +1059,18 @@
+       Vectorised.insert(&I);
+       continue;
+     }
+-    return false;
++    // Not understood *yet* -- but its operands may only be decided by a later
++    // sweep (a phi fed by this very block), so this is not fatal until a whole
++    // sweep classifies nothing new (see the fixpoint check below).
++    Unclassified = true;
+    }
+   }
++  if (WillMap.size() + Vectorised.size() + Uniform.size() == Classified) {
++    if (Unclassified)
++      return false;  // nothing left to learn and something is still not understood
++    break;
++  }
++  }
+ 
+   // Control flow has to stay uniform (see dependsOnVectorised): this runs
+   // after the whole function has been classified, so a branch depending on a
+@@ -949,13 +1085,18 @@
+ 
+   for (BasicBlock &BB : F) {
+    for (Instruction &I : BB) {
++    if (isa<PHINode>(I))
++      continue;  // classified above, rewritten by the phi fixup below
+     if (isa<LoadInst>(I)) {
+       if (isPackedParamLoad(cast<LoadInst>(&I)))
+         continue;  // pass-created parameter unpacking
+       if (sharedGlobalAt0(I.getOperand(0)))
+         continue;  // tile-memory gather (checked in the first loop)
+-      if (!indexedByTid(I.getOperand(0), Tid) ||
+-          cast<LoadInst>(I).getType() != ElemTy)
++      Value *LaneBase = nullptr;
++      uint64_t LaneOff = 0;
++      if (cast<LoadInst>(I).getType() != ElemTy ||
++          !laneAddrOf(I.getOperand(0), Tid, LaneBase, LaneOff) ||
++          (LaneOff != 0 && !ElemTy->isIntegerTy(32)))
+         return false;
+       continue;
+     }
+@@ -1118,6 +1259,69 @@
+   Value *NullBase = ConstantPointerNull::get(PtrTy);
+ 
+   DenseMap<Value *, Value *> ToVec;
++
++  // ---- parameter-pointer lane addressing --------------------------------
++  // The counterpart of the tile-memory chain above for an *ordinary* pointer
++  // parameter.  The vendor keeps the base pointer's two 32-bit halves apart and
++  // rebuilds each lane's absolute address inside the CPU:
++  //   %18 = vmul.nxv2i32.i32.i64(undef, %vid, i32 4, i64 128)   ; lane byte off
++  //   %19 = ptrtoint ptr %in to i64
++  //   %20 = lshr i64 %19, 32
++  //   %21 = trunc i64 %20 to i32                               ; Base_high
++  //   %22 = trunc i64 %19 to i32                               ; Base_low
++  //   %23 = vadd.nxv2i32.i32.i64(undef, %18, i32 %22, i64 128) ; Lo
++  // A chunk at byte offset N then gathers with
++  //   %i = vslh.nxv2i64.nxv2i32.i32.i64(vadd(Lo, i32 N), i32 %21, i64 128)
++  // while the chunk at offset 0 is a plain unit-stride `vle` from the base (the
++  // lanes are contiguous there) -- verbatim from the vendor's
++  // `control_divergent_loop` after-pass IR.
++  struct LaneAddr {
++    Value *Lo;
++    Value *Hi;
++  };
++  DenseMap<Value *, LaneAddr> LaneAddrs;
++  auto GetVMUL = [&]() {
++    return declareRVV(
++        M, ("llvm.riscv.vmul." + VT + ".i32.i64").c_str(),
++        FunctionType::get(VecTy, {VecTy, VecTy, Int32Ty, Int64Ty}, false));
++  };
++  auto LaneAddressBase = [&](Value *Base, Instruction *At) -> LaneAddr {
++    auto Found = LaneAddrs.find(Base);
++    if (Found != LaneAddrs.end())
++      return Found->second;
++    IRBuilder<> IB(At);
++    Value *LaneOff = nullptr;
++    auto TidIt = ToVec.find(Tid);
++    if (TidIt != ToVec.end())
++      LaneOff = IB.CreateCall(
++          GetVMUL(), {UndefValue::get(VecTy), TidIt->second,
++                      IB.getInt32(M.getDataLayout()
++                                      .getTypeAllocSize(ElemTy)
++                                      .getFixedValue()),
++                      IB.getInt64(SIMT_LANES)});
++    Value *PtrInt = IB.CreatePtrToInt(Base, Int64Ty);
++    Value *Hi = IB.CreateTrunc(IB.CreateLShr(PtrInt, IB.getInt64(32)), Int32Ty);
++    Value *Lo = IB.CreateTrunc(PtrInt, Int32Ty);
++    if (LaneOff)
++      Lo = IB.CreateCall(GetVADD(), {UndefValue::get(VecTy), LaneOff, Lo,
++                                     IB.getInt64(SIMT_LANES)});
++    LaneAddr A{Lo, Hi};
++    LaneAddrs[Base] = A;
++    return A;
++  };
++  /// The per-lane index vector of the chunk at byte offset \p ByteOffset.
++  auto LaneIndex = [&](const LaneAddr &A, uint64_t ByteOffset,
++                       Instruction *At) -> Value * {
++    IRBuilder<> IB(At);
++    Value *Low = A.Lo;
++    if (ByteOffset)
++      Low = IB.CreateCall(GetVADD(), {UndefValue::get(VecTy), Low,
++                                      IB.getInt32(ByteOffset),
++                                      IB.getInt64(SIMT_LANES)});
++    return IB.CreateCall(GetVSLH(), {UndefValue::get(IdxTy), Low, A.Hi,
++                                     IB.getInt64(SIMT_LANES)});
++  };
++
+   // The all-zero lane vector the reduction lowering ORs against, materialised
+   // lazily at the top of the entry block (see the reduce family below).
+   Value *Zero = nullptr;
+@@ -1136,9 +1340,34 @@
+     for (Instruction &I : BB)
+       Work.push_back(&I);
+ 
++  // ---- phis: build their vector counterparts up front -------------------
++  // `structurizecfg`'s `Flow` blocks merge two paths with a phi; the
++  // accumulator phi of `control_{divergent,uniform}_loop` becomes a phi of the
++  // lane vector, exactly as the vendor's own after-pass IR shows:
++  //   %85 = phi <vscale x 2 x i32> [ %17, %entry ], [ %84, %Flow16 ]
++  // The new phi is created *before* the body loop so that the body's users
++  // find it in `ToVec`, but its incoming values are only fixed up after that
++  // loop: an incoming value may be defined in a block that comes later in
++  // program order.
++  SmallVector<PHINode *, 8> OldPhis, NewPhis;
++  for (BasicBlock &BB : F)
++    for (PHINode &PN : BB.phis()) {
++      if (!Vectorised.count(&PN))
++        continue;  // uniform phi: stays a scalar phi, only loses its name
++      auto *NP = PHINode::Create(VecTy, PN.getNumIncomingValues(), "",
++                                 PN.getIterator());
++      for (unsigned i = 0; i != PN.getNumIncomingValues(); ++i)
++        NP->addIncoming(PoisonValue::get(VecTy), PN.getIncomingBlock(i));
++      ToVec[&PN] = NP;
++      OldPhis.push_back(&PN);
++      NewPhis.push_back(NP);
++    }
++
+   for (Instruction *I : Work) {
+     if (!I->getParent())
+       continue;  // already erased by an earlier replacement
++    if (isa<PHINode>(I))
++      continue;  // rebuilt above / kept scalar (see the phi fixup below)
+     if (auto *LI = dyn_cast<LoadInst>(I)) {
+       if (GlobalVariable *GV = sharedGlobalAt0(LI->getPointerOperand())) {
+         // A load wider than one lane gathers only the low chunk -- the `trunc`
+@@ -1152,15 +1381,27 @@
+         ToErase.push_back(LI);
+         continue;
+       }
+-      if (!indexedByTid(LI->getPointerOperand(), Tid))
++      Value *LaneBase = nullptr;
++      uint64_t LaneOff = 0;
++      if (LI->getType() != ElemTy ||
++          !laneAddrOf(LI->getPointerOperand(), Tid, LaneBase, LaneOff) ||
++          (LaneOff != 0 && !ElemTy->isIntegerTy(32)))
+         continue;  // parameter-extraction load, not a lane load
+-      Value *Base = cast<GetElementPtrInst>(LI->getPointerOperand())
+-                         ->getPointerOperand();
++      // The two halves of the base pointer are materialised even for the
++      // offset-0 chunk (the vendor does the same: the later chunks reuse the
++      // low half), and that chunk itself is a unit-stride `vle` from the base.
++      LaneAddr A = LaneAddressBase(LaneBase, LI);
+       EmitSetMemAlloc(LI);
+       IRBuilder<> IB(LI);
+-      Value *V = IB.CreateCall(GetVLE(), {UndefValue::get(VecTy), Base,
+-                                     IB.getInt64(SIMT_LANES)});
+-      ToVec[LI] = V;
++      if (LaneOff == 0) {
++        ToVec[LI] = IB.CreateCall(GetVLE(), {UndefValue::get(VecTy), LaneBase,
++                                             IB.getInt64(SIMT_LANES)});
++      } else {
++        Value *Idx = LaneIndex(A, LaneOff, LI);
++        ToVec[LI] = IB.CreateCall(GetVLUXEI(),
++                                  {UndefValue::get(VecTy), NullBase, Idx,
++                                   IB.getInt64(SIMT_LANES)});
++      }
+       // def pushed first: reverse(ToErase) then erases the user before it
+       ToErase.push_back(cast<Instruction>(LI->getPointerOperand()));
+       ToErase.push_back(LI);
+@@ -1617,12 +1858,51 @@
+     ToErase.push_back(CI);
+   }
+ 
++  // ---- phi fixup: map the incoming values onto the vector world ----------
++  for (unsigned p = 0; p != OldPhis.size(); ++p) {
++    PHINode *Old = OldPhis[p], *New = NewPhis[p];
++    for (unsigned i = 0; i != Old->getNumIncomingValues(); ++i) {
++      Value *V = Old->getIncomingValue(i);
++      Value *NV = nullptr;
++      auto It = ToVec.find(V);
++      if (It != ToVec.end()) {
++        NV = It->second;
++      } else if (isa<UndefValue>(V)) {
++        NV = UndefValue::get(VecTy);
++      } else if (isa<PoisonValue>(V)) {
++        NV = PoisonValue::get(VecTy);
++      } else if (auto *C = dyn_cast<ConstantInt>(V)) {
++        // A scalar constant is splatted **in the predecessor block**, verbatim
++        // from the vendor (`%17 = vmv.v.x.nxv2i32.i64(undef, i32 0, i64 128)`
++        // sits at the end of `entry`, ahead of its `br`).
++        IRBuilder<> SB(Old->getIncomingBlock(i)->getTerminator());
++        NV = SB.CreateCall(GetVMV(C->getType()),
++                           {UndefValue::get(VecTy), C,
++                            SB.getInt64(SIMT_LANES)});
++      } else {
++        return false;
++      }
++      New->setIncomingValue(i, NV);
++    }
++    Old->setName("");
++  }
++  // The scalar phis must let go of their operands *before* those operands are
++  // erased (a `Value` may not be destroyed while a use is still attached), and
++  // they are themselves erased only at the very end.
++  for (PHINode *Old : OldPhis)
++    Old->dropAllReferences();
++
+   // Now that no replacement refers to the scalar values, drop the replaced
+   // instructions (uses first, definitions second) and any dead GEPs.
+   for (Instruction *I : reverse(ToErase)) {
+     if (I->getParent())
+       I->eraseFromParent();
+   }
++  for (PHINode *Old : OldPhis) {
++    if (!Old->use_empty())
++      return false;  // a kept instruction still refers to the scalar phi
++    Old->eraseFromParent();
++  }
+   for (BasicBlock &BB : F)
+     for (Instruction &I : make_early_inc_range(BB))
+       if (I.use_empty() && isa<GetElementPtrInst>(I))

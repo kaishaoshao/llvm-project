@@ -1,0 +1,50 @@
+--- a/llvm/lib/Target/RISCV/RISCVSubtarget.h
++++ b/llvm/lib/Target/RISCV/RISCVSubtarget.h
+@@ -123,6 +123,15 @@
+                                                   StringRef FS,
+                                                   StringRef ABIName);
+ 
++#ifdef __TSM_RISCV__
++  /// Vendor fork (TX8 / tsm-x82): `tsm-x82` codegen is scheduled with the
++  /// Andes-45-series model by default; the TX82 model is only selected when the
++  /// vendor TX8 scheduling strategy (`-riscv-tx8-sched`) is enabled.
++  /// Reconstructed from libLLVMRISCVCodeGen.a(RISCVSubtarget.cpp.o) -- see
++  /// wt-raisa-c/logs/SCHED_FINDINGS.md.
++  const MCSchedModel &getSchedModelForCPU(StringRef CPU) const override;
++#endif
++
+ public:
+   // Initializes the data members to match that of the specified triple.
+   RISCVSubtarget(const Triple &TT, StringRef CPU, StringRef TuneCPU,
+--- a/llvm/lib/Target/RISCV/RISCVSubtarget.cpp
++++ b/llvm/lib/Target/RISCV/RISCVSubtarget.cpp
+@@ -71,6 +71,29 @@
+ 
+ void RISCVSubtarget::anchor() {}
+ 
++#ifdef __TSM_RISCV__
++/// Vendor fork (TX8 / tsm-x82) scheduling model selection.
++///
++/// Mechanical reconstruction of
++///   libLLVMRISCVCodeGen.a(RISCVSubtarget.cpp.o)::getSchedModelForCPU
++/// (disassembly in wt-raisa-c/logs/SCHED_FINDINGS.md): the vendor rewrites the
++/// `tsm-x82` tune CPU to `andes-45-series` unless `EnableTX8SchedStrategy`
++/// (the vendor's `-mllvm -riscv-tx8-sched`) is set, and then tail-calls the
++/// generic lookup.  TX82Model therefore only ever reaches the *codegen*
++/// scheduler when the TX8 scheduling strategy is on; the static MC table entry
++/// for tsm-x82 still points at TX82Model, which is what `llvm-mca` and the
++/// vendor's `TX82ModelSchedClasses[]` expose.
++///
++/// The TX8 scheduling strategy is not implemented in this tree, so the
++/// substitution is unconditional -- byte-for-byte the vendor's default
++/// configuration.
++const MCSchedModel &RISCVSubtarget::getSchedModelForCPU(StringRef CPU) const {
++  if (CPU == "tsm-x82")
++    CPU = "andes-45-series";
++  return MCSubtargetInfo::getSchedModelForCPU(CPU);
++}
++#endif
++
+ RISCVSubtarget &
+ RISCVSubtarget::initializeSubtargetDependencies(const Triple &TT, StringRef CPU,
+                                                 StringRef TuneCPU, StringRef FS,

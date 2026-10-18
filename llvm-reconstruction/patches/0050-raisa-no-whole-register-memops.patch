@@ -1,0 +1,17 @@
+--- a/llvm/lib/Target/RISCV/RISCVVectorPeephole.cpp
++++ b/llvm/lib/Target/RISCV/RISCVVectorPeephole.cpp
+@@ -303,6 +303,14 @@
+ /// %x = VL1RE8_V %ptr
+ /// VS1R_V %v, %ptr
+ bool RISCVVectorPeephole::convertToWholeRegister(MachineInstr &MI) const {
++  // Vendor fork: the RAISA (SIMT) device target never uses the whole-register
++  // memory form.  The vendor binary emits `vle32.v`/`vse32.v` (with the VLMAX
++  // sentinel in the VL slot) for all 96 `riscv64-unknown-raisa` SIMT cells
++  // while it does emit `vl1re32.v`/`vs1r.v` for plain `-mcpu=tsm-x82` musl
++  // compiles, so the transform is suppressed by the target OS, not by xtsm82s.
++  if (ST->getTargetTriple().getOS() == Triple::RAISA)
++    return false;
++
+ #define CASE_WHOLE_REGISTER_LMUL_SEW(lmul, sew)                                \
+   case RISCV::PseudoVLE##sew##_V_M##lmul:                                      \
+     NewOpc = RISCV::VL##lmul##RE##sew##_V;                                     \

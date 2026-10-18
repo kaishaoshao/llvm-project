@@ -1,0 +1,197 @@
+--- a/llvm/lib/Target/RISCV/RISCVInstrInfoVPseudos.td
++++ b/llvm/lib/Target/RISCV/RISCVInstrInfoVPseudos.td
+@@ -6668,6 +6668,52 @@
+ }
+ 
+ //===----------------------------------------------------------------------===//
++// TSM fork (RAISA) : `_BFloat16_` twin pseudo families
++//
++// The vendor gives the bf16 form of every CT floating-point vector instruction
++// its own pseudo, named by inserting `BFloat16_` after the opcode
++// (`PseudoVFADD_BFloat16_VV_M1_E16` alongside `PseudoVFADD_VV_M1_E16`), and
++// demands bit 8 of VTYPE on exactly that set.  The set was recovered verbatim
++// from the vendor's own per-opcode tables (`RISCV::getCTPseudoInfoByBF16` /
++// `getCTPseudoInfoByHalf` in `libLLVMRISCVDesc.a(RISCVBaseInfo.cpp.o)`): 540
++// `{bf16-pseudo, f16-twin}` pairs, every `First` side a `_BFloat16_` name and
++// every `Second` side its f16 sibling -- see recon/bf16/ct_bit8_pairs.tsv and
++// recon/bf16/ct_bit8_report.txt (540/540 resolved, 0 unresolved).
++//
++// Reproducing the twins is the *only* way to keep the demand per-opcode here:
++// without them f16 and bf16 share one pseudo, and the MIR cannot tell them
++// apart (`LLT` has no bf16 kind, so `RISCVInsertVSETVLI` cannot recover the
++// element type from the register type either).  Each twin re-instantiates the
++// family's own pseudo multiclass under the `_BFloat16` prefix, so operands,
++// register classes and scheduling class are identical to the f16 sibling by
++// construction; only the name and `AltFmtType` differ.
++//
++// `AltFmtType` is TSFlags bit 26 (`RISCVII::hasAltFmtType`); it is consumed at
++// the vsetvli *emission* point in `RISCVInsertVSETVLI.cpp`
++// (`transferBefore` -> `encodeVTYPE` -> `PseudoVSETVLI*`), not merely in
++// `DemandedFields`.
++//
++// NOTE: re-instantiating the whole multiclass also creates `_E32`/`_E64` twins,
++// which the vendor does not have and which no pattern references (bf16 is only
++// ever 16-bit).  The **E16 subset** is what must match the vendor name for name;
++// `recon/bf16/` records that comparison.
++//===----------------------------------------------------------------------===//
++let AltFmtType = 1 in {
++  let mayRaiseFPException = true in {
++    defm PseudoVFADD_BFloat16    : VPseudoVALU_VV_VF_RM;
++    defm PseudoVFSUB_BFloat16    : VPseudoVALU_VV_VF_RM;
++    defm PseudoVFMUL_BFloat16    : VPseudoVFMUL_VV_VF_RM;
++    defm PseudoVFMIN_BFloat16    : VPseudoVMAX_VV_VF;
++    defm PseudoVFMAX_BFloat16    : VPseudoVMAX_VV_VF;
++    defm PseudoVFRSQRT7_BFloat16 : VPseudoVRCP_V;
++    defm PseudoVFREC7_BFloat16   : VPseudoVRCP_V_RM;
++    defm PseudoVFREDUSUM_BFloat16 : VPseudoVFRED_VS_RM;
++    defm PseudoVFREDMIN_BFloat16  : VPseudoVFREDMINMAX_VS;
++    defm PseudoVFREDMAX_BFloat16  : VPseudoVFREDMINMAX_VS;
++  }
++}
++
++//===----------------------------------------------------------------------===//
+ // 14.4. Vector Widening Floating-Point Reduction Instructions
+ //===----------------------------------------------------------------------===//
+ let IsRVVWideningReduction = 1, mayRaiseFPException = true in {
+@@ -6677,6 +6723,51 @@
+ 
+ } // Predicates = [HasVInstructionsAnyF]
+ 
++// `AllFloatVectors` carries the bf16 types next to the f16/f32/f64 ones, so the
++// patterns have to be split: bf16 goes to the `_BFloat16_` twin, everything else
++// to the plain pseudo.  (Both are still generated for bf16 -- only the *routing*
++// changes -- so the two lists are disjoint and together cover AllFloatVectors.)
++// These must live outside the `let Predicates = ... in { }` block above: a `{ }`
++// block introduces a scope, and `defvar`s declared inside it are not visible to
++// the pattern section further down.
++defvar VPNONBF16FloatVectors =
++  !filter(vti, AllFloatVectors, !not(!eq(vti.Scalar, bf16)));
++defvar VPBF16FloatVectors =
++  !filter(vti, AllFloatVectors, !eq(vti.Scalar, bf16));
++
++// The bf16 M1 accumulator / scalar-operand type (`vbfloat16m1_t`).  The upstream
++// reduction multiclasses derive the M1 type from the SEW alone
++// (`!cast<VTypeInfo>("VF16M1")`), which is `vfloat16m1_t` -- *not* the bf16 M1 --
++// and that type mismatch is exactly why bf16 `vfred{usum,max,min}` had no
++// matching pattern at all (`Cannot select: intrinsic %llvm.riscv.vfredusum`).
++defvar VPBF16M1 = !cast<VTypeInfo>("VBF16M1");
++
++// Same lowerings as `VPatReductionV_VS{,_RM}`, but over an explicit type list so
++// the bf16 types can pick the `_BFloat16_` twin and the bf16 M1 accumulator.
++multiclass VPatXTsmReductionV_VS<string intrinsic, string instruction,
++                                 list<VTypeInfo> vtilist> {
++  foreach vti = vtilist in {
++    defvar m1 = !if(!eq(vti.Scalar, bf16), VPBF16M1,
++                    !cast<VTypeInfo>("VF" # vti.SEW # "M1"));
++    let Predicates = GetVTypePredicates<vti>.Predicates in
++    defm : VPatTernaryTU<intrinsic, instruction, "VS",
++                         m1.Vector, vti.Vector, m1.Vector, vti.Mask,
++                         vti.Log2SEW, vti.LMul, VR, vti.RegClass, VR>;
++  }
++}
++
++multiclass VPatXTsmReductionV_VS_RM<string intrinsic, string instruction,
++                                    list<VTypeInfo> vtilist> {
++  foreach vti = vtilist in {
++    defvar m1 = !if(!eq(vti.Scalar, bf16), VPBF16M1,
++                    !cast<VTypeInfo>("VF" # vti.SEW # "M1"));
++    let Predicates = GetVTypePredicates<vti>.Predicates in
++    defm : VPatTernaryTURoundingMode<intrinsic, instruction, "VS",
++                                     m1.Vector, vti.Vector, m1.Vector, vti.Mask,
++                                     vti.Log2SEW, vti.LMul, VR, vti.RegClass, VR>;
++  }
++}
++
+ //===----------------------------------------------------------------------===//
+ // 15. Vector Mask Instructions
+ //===----------------------------------------------------------------------===//
+@@ -7092,10 +7183,14 @@
+ //===----------------------------------------------------------------------===//
+ // 13.2. Vector Single-Width Floating-Point Add/Subtract Instructions
+ //===----------------------------------------------------------------------===//
+-defm : VPatBinaryV_VV_VX_RM<"int_riscv_vfadd", "PseudoVFADD", AllFloatVectors,
+-                            isSEWAware = 1>;
+-defm : VPatBinaryV_VV_VX_RM<"int_riscv_vfsub", "PseudoVFSUB", AllFloatVectors,
+-                            isSEWAware = 1>;
++defm : VPatBinaryV_VV_VX_RM<"int_riscv_vfadd", "PseudoVFADD",
++                            VPNONBF16FloatVectors, isSEWAware = 1>;
++defm : VPatBinaryV_VV_VX_RM<"int_riscv_vfadd", "PseudoVFADD_BFloat16",
++                            VPBF16FloatVectors, isSEWAware = 1>;
++defm : VPatBinaryV_VV_VX_RM<"int_riscv_vfsub", "PseudoVFSUB",
++                            VPNONBF16FloatVectors, isSEWAware = 1>;
++defm : VPatBinaryV_VV_VX_RM<"int_riscv_vfsub", "PseudoVFSUB_BFloat16",
++                            VPBF16FloatVectors, isSEWAware = 1>;
+ defm : VPatBinaryV_VX_RM<"int_riscv_vfrsub", "PseudoVFRSUB", AllFloatVectors,
+                          isSEWAware = 1>;
+ 
+@@ -7115,7 +7210,9 @@
+ // 13.4. Vector Single-Width Floating-Point Multiply/Divide Instructions
+ //===----------------------------------------------------------------------===//
+ defm : VPatBinaryV_VV_VX_RM<"int_riscv_vfmul", "PseudoVFMUL",
+-                            AllFloatVectors, isSEWAware=1>;
++                            VPNONBF16FloatVectors, isSEWAware=1>;
++defm : VPatBinaryV_VV_VX_RM<"int_riscv_vfmul", "PseudoVFMUL_BFloat16",
++                            VPBF16FloatVectors, isSEWAware=1>;
+ defm : VPatBinaryV_VV_VX_RM<"int_riscv_vfdiv", "PseudoVFDIV",
+                             AllFloatVectors, isSEWAware=1>;
+ defm : VPatBinaryV_VX_RM<"int_riscv_vfrdiv", "PseudoVFRDIV",
+@@ -7170,20 +7267,30 @@
+ //===----------------------------------------------------------------------===//
+ // 13.9. Vector Floating-Point Reciprocal Square-Root Estimate Instruction
+ //===----------------------------------------------------------------------===//
+-defm : VPatUnaryV_V<"int_riscv_vfrsqrt7", "PseudoVFRSQRT7", AllFloatVectors, isSEWAware=1>;
++defm : VPatUnaryV_V<"int_riscv_vfrsqrt7", "PseudoVFRSQRT7",
++                    VPNONBF16FloatVectors, isSEWAware=1>;
++defm : VPatUnaryV_V<"int_riscv_vfrsqrt7", "PseudoVFRSQRT7_BFloat16",
++                    VPBF16FloatVectors, isSEWAware=1>;
+ 
+ //===----------------------------------------------------------------------===//
+ // 13.10. Vector Floating-Point Reciprocal Estimate Instruction
+ //===----------------------------------------------------------------------===//
+-defm : VPatUnaryV_V_RM<"int_riscv_vfrec7", "PseudoVFREC7", AllFloatVectors, isSEWAware=1>;
++defm : VPatUnaryV_V_RM<"int_riscv_vfrec7", "PseudoVFREC7",
++                       VPNONBF16FloatVectors, isSEWAware=1>;
++defm : VPatUnaryV_V_RM<"int_riscv_vfrec7", "PseudoVFREC7_BFloat16",
++                       VPBF16FloatVectors, isSEWAware=1>;
+ 
+ //===----------------------------------------------------------------------===//
+ // 13.11. Vector Floating-Point Min/Max Instructions
+ //===----------------------------------------------------------------------===//
+-defm : VPatBinaryV_VV_VX<"int_riscv_vfmin", "PseudoVFMIN", AllFloatVectors,
+-                         isSEWAware=1>;
+-defm : VPatBinaryV_VV_VX<"int_riscv_vfmax", "PseudoVFMAX", AllFloatVectors,
+-                         isSEWAware=1>;
++defm : VPatBinaryV_VV_VX<"int_riscv_vfmin", "PseudoVFMIN",
++                         VPNONBF16FloatVectors, isSEWAware=1>;
++defm : VPatBinaryV_VV_VX<"int_riscv_vfmin", "PseudoVFMIN_BFloat16",
++                         VPBF16FloatVectors, isSEWAware=1>;
++defm : VPatBinaryV_VV_VX<"int_riscv_vfmax", "PseudoVFMAX",
++                         VPNONBF16FloatVectors, isSEWAware=1>;
++defm : VPatBinaryV_VV_VX<"int_riscv_vfmax", "PseudoVFMAX_BFloat16",
++                         VPBF16FloatVectors, isSEWAware=1>;
+ 
+ //===----------------------------------------------------------------------===//
+ // 13.12. Vector Floating-Point Sign-Injection Instructions
+@@ -7323,9 +7430,19 @@
+ // 14.3. Vector Single-Width Floating-Point Reduction Instructions
+ //===----------------------------------------------------------------------===//
+ defm : VPatReductionV_VS_RM<"int_riscv_vfredosum", "PseudoVFREDOSUM", IsFloat=1>;
+-defm : VPatReductionV_VS_RM<"int_riscv_vfredusum", "PseudoVFREDUSUM", IsFloat=1>;
+-defm : VPatReductionV_VS<"int_riscv_vfredmin", "PseudoVFREDMIN", IsFloat=1>;
+-defm : VPatReductionV_VS<"int_riscv_vfredmax", "PseudoVFREDMAX", IsFloat=1>;
++defm : VPatXTsmReductionV_VS_RM<"int_riscv_vfredusum", "PseudoVFREDUSUM",
++                                VPNONBF16FloatVectors>;
++defm : VPatXTsmReductionV_VS_RM<"int_riscv_vfredusum",
++                                "PseudoVFREDUSUM_BFloat16",
++                                VPBF16FloatVectors>;
++defm : VPatXTsmReductionV_VS<"int_riscv_vfredmin", "PseudoVFREDMIN",
++                             VPNONBF16FloatVectors>;
++defm : VPatXTsmReductionV_VS<"int_riscv_vfredmin", "PseudoVFREDMIN_BFloat16",
++                             VPBF16FloatVectors>;
++defm : VPatXTsmReductionV_VS<"int_riscv_vfredmax", "PseudoVFREDMAX",
++                             VPNONBF16FloatVectors>;
++defm : VPatXTsmReductionV_VS<"int_riscv_vfredmax", "PseudoVFREDMAX_BFloat16",
++                             VPBF16FloatVectors>;
+ 
+ //===----------------------------------------------------------------------===//
+ // 14.4. Vector Widening Floating-Point Reduction Instructions

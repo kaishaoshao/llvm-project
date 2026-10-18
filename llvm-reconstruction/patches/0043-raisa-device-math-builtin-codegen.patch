@@ -1,0 +1,142 @@
+--- a/clang/lib/CodeGen/TargetBuiltins/RISCV.cpp
++++ b/clang/lib/CodeGen/TargetBuiltins/RISCV.cpp
+@@ -191,8 +191,139 @@
+ 
+   // Required for overloaded intrinsics.
+   llvm::SmallVector<llvm::Type *, 2> IntrinsicTypes;
++
++  // RAISA (`__raisa_*`) device-math helpers need one helper that the plain
++  // `ID`/`IntrinsicTypes` epilogue cannot express: the four
++  // `__raisa_fadd_{rn,ru,rz,rd}_*` families lower to
++  // `llvm.experimental.constrained.fadd` with an explicit rounding mode and
++  // `fpexcept.ignore`.  All of this was recovered from the vendor's own
++  // `-emit-llvm` output, e.g. for `__raisa_fadd_rn_f`:
++  //
++  //   %7 = call float @llvm.experimental.constrained.fadd.f32(
++  //            float %5, float %6, metadata !"round.tonearest",
++  //            metadata !"fpexcept.ignore") #5      ; attributes #5 = strictfp
++  auto EmitRAISAConstrainedFAdd = [&](StringRef RoundingMode) -> Value * {
++    llvm::LLVMContext &Ctx = getLLVMContext();
++    llvm::Function *F = CGM.getIntrinsic(
++        Intrinsic::experimental_constrained_fadd, {ResultType});
++    llvm::Value *Args[] = {
++        Ops[0], Ops[1],
++        llvm::MetadataAsValue::get(
++            Ctx, llvm::MDString::get(Ctx, RoundingMode)),
++        llvm::MetadataAsValue::get(
++            Ctx, llvm::MDString::get(Ctx, "fpexcept.ignore"))};
++    // The vendor's call site carries exactly one attribute, `strictfp`
++    // (`attributes #5 = { strictfp }` in its -emit-llvm output) -- it does
++    // *not* copy the declaration's attribute list onto the call.
++    llvm::CallInst *CI = Builder.CreateCall(F, Args);
++    Builder.setConstrainedFPCallAttr(CI);
++    return CI;
++  };
++
+   switch (BuiltinID) {
+   default: llvm_unreachable("unexpected builtin ID");
++
++    // RAISA scalar device math.  Mapping verified against the vendor's
++    // `-S -emit-llvm` for all 50 `__raisa_*` builtins; the constrained-fadd
++    // rounding modes are round.tonearest / round.upward / round.towardzero /
++    // round.downward for the _rn / _ru / _rz / _rd spellings.
++  case RISCV::BI__raisa_fadd_rn_f16:
++  case RISCV::BI__raisa_fadd_rn_f:
++  case RISCV::BI__raisa_fadd_rn_bf16:
++    return EmitRAISAConstrainedFAdd("round.tonearest");
++  case RISCV::BI__raisa_fadd_ru_f16:
++  case RISCV::BI__raisa_fadd_ru_f:
++  case RISCV::BI__raisa_fadd_ru_bf16:
++    return EmitRAISAConstrainedFAdd("round.upward");
++  case RISCV::BI__raisa_fadd_rz_f16:
++  case RISCV::BI__raisa_fadd_rz_f:
++  case RISCV::BI__raisa_fadd_rz_bf16:
++    return EmitRAISAConstrainedFAdd("round.towardzero");
++  case RISCV::BI__raisa_fadd_rd_f16:
++  case RISCV::BI__raisa_fadd_rd_f:
++  case RISCV::BI__raisa_fadd_rd_bf16:
++    return EmitRAISAConstrainedFAdd("round.downward");
++  case RISCV::BI__raisa_exp2_f16:
++  case RISCV::BI__raisa_exp2_f:
++  case RISCV::BI__raisa_exp2_bf16:
++    ID = Intrinsic::exp2;
++    IntrinsicTypes = {ResultType};
++    break;
++  case RISCV::BI__raisa_cos_f16:
++  case RISCV::BI__raisa_cos_f:
++  case RISCV::BI__raisa_cos_bf16:
++    ID = Intrinsic::riscv_raisa_cos;
++    IntrinsicTypes = {ResultType};
++    break;
++  case RISCV::BI__raisa_sin_f16:
++  case RISCV::BI__raisa_sin_f:
++  case RISCV::BI__raisa_sin_bf16:
++    ID = Intrinsic::riscv_raisa_sin;
++    IntrinsicTypes = {ResultType};
++    break;
++  case RISCV::BI__raisa_log2_f16:
++  case RISCV::BI__raisa_log2_f:
++  case RISCV::BI__raisa_log2_bf16:
++    ID = Intrinsic::riscv_raisa_log2;
++    IntrinsicTypes = {ResultType};
++    break;
++  case RISCV::BI__raisa_frsqrt_f16:
++  case RISCV::BI__raisa_frsqrt_f:
++  case RISCV::BI__raisa_frsqrt_bf16:
++    ID = Intrinsic::riscv_raisa_frsqrt;
++    IntrinsicTypes = {ResultType};
++    break;
++  case RISCV::BI__raisa_reduce_sum_f16:
++  case RISCV::BI__raisa_reduce_sum_f:
++  case RISCV::BI__raisa_reduce_sum_bf16:
++    ID = Intrinsic::riscv_raisa_reduce_sum;
++    IntrinsicTypes = {ResultType};
++    break;
++  case RISCV::BI__raisa_reduce_fmax_f16:
++  case RISCV::BI__raisa_reduce_fmax_f:
++  case RISCV::BI__raisa_reduce_fmax_bf16:
++    ID = Intrinsic::riscv_raisa_reduce_fmax;
++    IntrinsicTypes = {ResultType};
++    break;
++  case RISCV::BI__raisa_reduce_fmin_f16:
++  case RISCV::BI__raisa_reduce_fmin_f:
++  case RISCV::BI__raisa_reduce_fmin_bf16:
++    ID = Intrinsic::riscv_raisa_reduce_fmin;
++    IntrinsicTypes = {ResultType};
++    break;
++  case RISCV::BI__raisa_fdiv_f16:
++  case RISCV::BI__raisa_fdiv_f:
++  case RISCV::BI__raisa_fdiv_bf16:
++    ID = Intrinsic::riscv_raisa_fdiv;
++    IntrinsicTypes = {ResultType};
++    break;
++  case RISCV::BI__raisa_fmax_f16:
++  case RISCV::BI__raisa_fmax_f:
++  case RISCV::BI__raisa_fmax_bf16:
++    ID = Intrinsic::riscv_raisa_fmax;
++    IntrinsicTypes = {ResultType};
++    break;
++  case RISCV::BI__raisa_fmin_f16:
++  case RISCV::BI__raisa_fmin_f:
++  case RISCV::BI__raisa_fmin_bf16:
++    ID = Intrinsic::riscv_raisa_fmin;
++    IntrinsicTypes = {ResultType};
++    break;
++  case RISCV::BI__raisa_div:
++    ID = Intrinsic::riscv_raisa_div;
++    break;
++  case RISCV::BI__raisa_max:
++    ID = Intrinsic::riscv_raisa_max;
++    break;
++  case RISCV::BI__raisa_min:
++    ID = Intrinsic::riscv_raisa_min;
++    break;
++  case RISCV::BI__raisa_umax:
++    ID = Intrinsic::riscv_raisa_umax;
++    break;
++  case RISCV::BI__raisa_umin:
++    ID = Intrinsic::riscv_raisa_umin;
++    break;
+   case RISCV::BI__builtin_riscv_orc_b_32:
+   case RISCV::BI__builtin_riscv_orc_b_64:
+   case RISCV::BI__builtin_riscv_clmul_32:

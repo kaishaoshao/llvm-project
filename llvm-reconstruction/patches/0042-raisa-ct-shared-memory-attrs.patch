@@ -1,0 +1,62 @@
+--- a/clang/lib/Sema/SemaDeclAttr.cpp
++++ b/clang/lib/Sema/SemaDeclAttr.cpp
+@@ -5165,6 +5165,43 @@
+   D->addAttr(::new (S.Context) CUDASharedAttr(S.Context, AL));
+ }
+ 
++// RAISA compute-tile shared-memory attributes.  They take no arguments and
++// carry no extra data: their only job is to be recorded on the VarDecl so that
++// SemaRAISA (target-side decl filtering), the TX8 address-space lowering and
++// CGRAISATS (shared-variable ABI) can recognise the tile memory space.  The
++// vendor has one tiny handler per attribute (the generated
++// `handleDeclAttribute` tables do not cover them, so `ProcessDeclAttribute`
++// must).
++static void handleRAISASharedAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
++  switch (AL.getKind()) {
++  case ParsedAttr::AT_RAISAL0AShared:
++    D->addAttr(::new (S.Context) RAISAL0ASharedAttr(S.Context, AL));
++    return;
++  case ParsedAttr::AT_RAISAL0WShared:
++    D->addAttr(::new (S.Context) RAISAL0WSharedAttr(S.Context, AL));
++    return;
++  case ParsedAttr::AT_RAISAL1Shared:
++    D->addAttr(::new (S.Context) RAISAL1SharedAttr(S.Context, AL));
++    return;
++  default:
++    llvm_unreachable("not a RAISA shared-memory attribute");
++  }
++}
++
++static void handleRAISAMemorySpaceAttr(Sema &S, Decl *D,
++                                       const ParsedAttr &AL) {
++  switch (AL.getKind()) {
++  case ParsedAttr::AT_RAISAGMem:
++    D->addAttr(::new (S.Context) RAISAGMemAttr(S.Context, AL));
++    return;
++  case ParsedAttr::AT_RAISAGeneric:
++    D->addAttr(::new (S.Context) RAISAGenericAttr(S.Context, AL));
++    return;
++  default:
++    llvm_unreachable("not a RAISA memory space attribute");
++  }
++}
++
+ static void handleGlobalAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
+   const auto *FD = cast<FunctionDecl>(D);
+   if (!FD->getReturnType()->isVoidType() &&
+@@ -7354,6 +7391,15 @@
+   case ParsedAttr::AT_CUDAShared:
+     handleSharedAttr(S, D, AL);
+     break;
++  case ParsedAttr::AT_RAISAL0AShared:
++  case ParsedAttr::AT_RAISAL0WShared:
++  case ParsedAttr::AT_RAISAL1Shared:
++    handleRAISASharedAttr(S, D, AL);
++    break;
++  case ParsedAttr::AT_RAISAGMem:
++  case ParsedAttr::AT_RAISAGeneric:
++    handleRAISAMemorySpaceAttr(S, D, AL);
++    break;
+   case ParsedAttr::AT_VecReturn:
+     handleVecReturnAttr(S, D, AL);
+     break;

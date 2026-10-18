@@ -1,0 +1,60 @@
+--- a/llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp
++++ b/llvm/lib/Target/RISCV/RISCVInsertVSETVLI.cpp
+@@ -135,13 +135,26 @@
+ /// Semantics taken verbatim from the vendor decompilation:
+ ///   1. If \p MI has a masked counterpart, start from that (masked) pseudo's
+ ///      `UsesMaskPolicy` bit -- this is the `>> 0x10 & 1` bit of its TSFlags.
+-///   2. (The vendor also forces the result for a small set of MC opcodes; those
+-///      are indices into the vendor's instruction enum and could not be mapped
+-///      onto this tree's numbering.  They only affect instructions whose
+-///      destination EEW is not 1 bit; no reproduced RAISA cell reaches them.)
+-///   3. A destination EEW of 1 bit (a mask producing operation) always demands
++///   2. [Vendor fork, round 2] A whitelist of *base* opcodes forces the demand.
++///      The vendor's code compares against its own enum values; decoding those
++///      numbers with `llvm-mc --show-inst` against the vendor's assembler gives
++///      (decompiled.c 674-697):
++///        0x4206 VFMERGE_VFM   0x4215 VFMV_V_F
++///        0x433d VMERGE_VIM    0x433e VMERGE_VVM   0x433f VMERGE_VXM
++///        0x4382 VMV_V_I       0x4383 VMV_V_V      0x4384 VMV_V_X
++///      i.e. exactly the merge/move/splat family: their passthru is normally
++///      `undef`, so the pseudo leaves the mask policy agnostic, while the SIMT
++///      path demands it.  Evidence: id_ctaid_x's `vmv.v.x` is preceded by
++///      `vsetvli a1, zero, e32, m1, ta, mu` in the vendor's `.s`.
++///   3. The destination-EEW bits are read from the **base** instruction
++///      (`getRVVMCOpcode`, decompiled.c 699-705), not from the pseudo.  For the
++///      whitelisted family those two disagree (the pseudo carries EEW=1 while
++///      the base carries the default SEW-scaled value), which is precisely why
++///      the non-whitelisted path would answer `ma` where the vendor answers
++///      `mu`.
++///   4. A destination EEW of 1 bit (a mask producing operation) always demands
+ ///      the mask policy.
+-///   4. When \p IsMaskAgnostic is non-null and the instruction demands the
++///   5. When \p IsMaskAgnostic is non-null and the instruction demands the
+ ///      policy, it receives `destination EEW == 1 bit`, i.e. the demanded mask
+ ///      policy is *agnostic* for mask producing ops and *undisturbed* (`mu`,
+ ///      VMA = 0) for everything else.
+@@ -154,7 +167,23 @@
+     Demand = ST->getInstrInfo()->get(Masked->MaskedPseudo).TSFlags &
+              RISCVII::UsesMaskPolicyMask;
+ 
+-  const MCInstrDesc &Desc = MI.getDesc();
++  const unsigned Base = RISCV::getRVVMCOpcode(MI.getOpcode());
++  switch (Base) {
++  case RISCV::VFMERGE_VFM:
++  case RISCV::VFMV_V_F:
++  case RISCV::VMERGE_VIM:
++  case RISCV::VMERGE_VVM:
++  case RISCV::VMERGE_VXM:
++  case RISCV::VMV_V_I:
++  case RISCV::VMV_V_V:
++  case RISCV::VMV_V_X:
++    Demand = true;
++    break;
++  default:
++    break;
++  }
++
++  const MCInstrDesc &Desc = Base ? ST->getInstrInfo()->get(Base) : MI.getDesc();
+   unsigned DestEEW =
+       (Desc.TSFlags & RISCVII::DestEEWMask) >> RISCVII::DestEEWShift;
+   if (DestEEW == 0)

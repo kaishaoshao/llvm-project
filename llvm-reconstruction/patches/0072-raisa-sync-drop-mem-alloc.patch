@@ -1,0 +1,40 @@
+--- a/src/llvm/lib/Target/RISCV/TX8InsertXFRM.cpp
++++ b/src/llvm/lib/Target/RISCV/TX8InsertXFRM.cpp
+@@ -81,6 +81,27 @@
+ 
+ INITIALIZE_PASS(TX8InsertXFRM, DEBUG_TYPE, TX8_INSERT_XFRM_NAME, false, false)
+ 
++/// Return true if \p Opcode is one of the fork's own indexed load/store
++/// pseudos (`vluxei.sync` / `vsuxei.sync`).  The vendor does *not* put
++/// `implicit $mem_alloc` on these -- only on the upstream RVV loads/stores:
++/// `-mllvm -print-before=riscv-insert-vsetvli` on mem_l1_size_1.rc shows
++///   PseudoVSUXEI64_SYNC_V_M2_M1 ..., -1, 5 :: (store unknown-size)
++///   PseudoVLUXEI64_SYNC_V_M2_M1 ..., -1, 5, 2 :: (load unknown-size)
++///   PseudoVSE32_V_M1 ..., -1, 5, implicit $mem_alloc :: (store ...)
++/// (same on alloc_l1shared_base.rc), so marking them would be a spurious
++/// extra dependence on the marker register.
++static bool isXTsmSyncMemOp(unsigned Opcode) {
++  switch (RISCV::getRVVMCOpcode(Opcode)) {
++  case RISCV::XTsm_VLUXEI32_SYNC_V:
++  case RISCV::XTsm_VLUXEI64_SYNC_V:
++  case RISCV::XTsm_VSUXEI32_SYNC_V:
++  case RISCV::XTsm_VSUXEI64_SYNC_V:
++    return true;
++  default:
++    return false;
++  }
++}
++
+ /// Return true if \p MI is an RVV vector memory operation, i.e. an instruction
+ /// that accesses memory and has a vector register operand together with the
+ /// SEW/VL operands every generated RVV instruction carries.
+@@ -89,6 +110,9 @@
+   if (!MI.mayLoadOrStore())
+     return false;
+ 
++  if (isXTsmSyncMemOp(MI.getOpcode()))
++    return false;
++
+   const MCInstrDesc &Desc = MI.getDesc();
+   if (!RISCVII::hasVLOp(Desc.TSFlags) && !RISCVII::hasSEWOp(Desc.TSFlags))
+     return false;
