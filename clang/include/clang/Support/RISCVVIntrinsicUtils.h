@@ -86,6 +86,9 @@ enum class BaseTypeModifier : uint8_t {
   UnsignedLong,
   SignedLong,
   Float32
+#ifdef __TSM_RISCV__
+  , S128
+#endif
 };
 
 // Modifier for type, used for both scalar and vector types.
@@ -228,6 +231,9 @@ enum ScalarTypeKind : uint8_t {
   UnsignedInteger,
   Float,
   BFloat,
+#ifdef __TSM_RISCV__
+  S128,
+#endif
   Invalid,
   Undefined,
 };

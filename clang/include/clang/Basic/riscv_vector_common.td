@@ -507,6 +507,10 @@ multiclass RVVFloatingBinBuiltinSet {
   defm "" : RVVOutOp1BuiltinSet<NAME, "fd",
                                 [["vv", "v", "vvv"],
                                  ["vf", "v", "vve"]]>;
+  let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+    defm "" : RVVOutOp1BuiltinSet<NAME, "fd",
+                                  [["vv", "v", "vvv"],
+                                   ["vf", "v", "vve"]]>;
   let RequiredFeatures = ["zvfh"] in
     defm "" : RVVOutOp1BuiltinSet<NAME, "x",
                                   [["vv", "v", "vvv"],
@@ -517,6 +521,10 @@ multiclass RVVFloatingBinBuiltinSetRoundingMode {
   defm "" : RVVOutOp1BuiltinSet<NAME, "fd",
                                 [["vv", "v", "vvvu"],
                                  ["vf", "v", "vveu"]]>;
+  let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+    defm "" : RVVOutOp1BuiltinSet<NAME, "fd",
+                                  [["vv", "v", "vvvu"],
+                                   ["vf", "v", "vveu"]]>;
   let RequiredFeatures = ["zvfh"] in
     defm "" : RVVOutOp1BuiltinSet<NAME, "x",
                                   [["vv", "v", "vvvu"],
@@ -526,6 +534,9 @@ multiclass RVVFloatingBinBuiltinSetRoundingMode {
 multiclass RVVFloatingBinVFBuiltinSet {
   defm "" : RVVOutOp1BuiltinSet<NAME, "fd",
                                 [["vf", "v", "vve"]]>;
+  let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+    defm "" : RVVOutOp1BuiltinSet<NAME, "fd",
+                                  [["vf", "v", "vve"]]>;
   let RequiredFeatures = ["zvfh"] in
     defm "" : RVVOutOp1BuiltinSet<NAME, "x",
                                   [["vf", "v", "vve"]]>;
@@ -534,6 +545,9 @@ multiclass RVVFloatingBinVFBuiltinSet {
 multiclass RVVFloatingBinVFBuiltinSetRoundingMode {
   defm "" : RVVOutOp1BuiltinSet<NAME, "fd",
                                 [["vf", "v", "vveu"]]>;
+  let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+    defm "" : RVVOutOp1BuiltinSet<NAME, "fd",
+                                  [["vf", "v", "vveu"]]>;
   let RequiredFeatures = ["zvfh"] in
     defm "" : RVVOutOp1BuiltinSet<NAME, "x",
                                   [["vf", "v", "vveu"]]>;
@@ -543,6 +557,10 @@ multiclass RVVFloatingMaskOutBuiltinSet {
   defm "" : RVVOp0Op1BuiltinSet<NAME, "fd",
                                 [["vv", "vm", "mvv"],
                                  ["vf", "vm", "mve"]]>;
+  let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+    defm "" : RVVOp0Op1BuiltinSet<NAME, "fd",
+                                  [["vv", "vm", "mvv"],
+                                   ["vf", "vm", "mve"]]>;
   let RequiredFeatures = ["zvfh"] in
     defm "" : RVVOp0Op1BuiltinSet<NAME, "x",
                                   [["vv", "vm", "mvv"],
@@ -657,6 +675,9 @@ let HasMaskedOffOperand = true in {
   multiclass RVVFloatingReductionBuiltin {
     defm "" : RVVOutOp0BuiltinSet<NAME, "fd",
                                   [["vs", "vSv", "SvvSv"]]>;
+    let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+      defm "" : RVVOutOp0BuiltinSet<NAME, "fd",
+                                    [["vs", "vSv", "SvvSv"]]>;
     let RequiredFeatures = ["zvfh"] in
       defm "" : RVVOutOp0BuiltinSet<NAME, "x",
                                     [["vs", "vSv", "SvvSv"]]>;
@@ -664,6 +685,9 @@ let HasMaskedOffOperand = true in {
   multiclass RVVFloatingReductionBuiltinRoundingMode {
     defm "" : RVVOutOp0BuiltinSet<NAME, "fd",
                                   [["vs", "vSv", "SvvSvu"]]>;
+    let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+      defm "" : RVVOutOp0BuiltinSet<NAME, "fd",
+                                    [["vs", "vSv", "SvvSvu"]]>;
     let RequiredFeatures = ["zvfh"] in
       defm "" : RVVOutOp0BuiltinSet<NAME, "x",
                                     [["vs", "vSv", "SvvSvu"]]>;
@@ -671,6 +695,9 @@ let HasMaskedOffOperand = true in {
   multiclass RVVFloatingWidenReductionBuiltin {
     defm "" : RVVOutOp0BuiltinSet<NAME, "f",
                                   [["vs", "vSw", "SwvSw"]]>;
+    let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+      defm "" : RVVOutOp0BuiltinSet<NAME, "f",
+                                    [["vs", "vSw", "SwvSw"]]>;
     let RequiredFeatures = ["zvfh"] in
       defm "" : RVVOutOp0BuiltinSet<NAME, "x",
                                     [["vs", "vSw", "SwvSw"]]>;

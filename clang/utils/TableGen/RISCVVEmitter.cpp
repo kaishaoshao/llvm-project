@@ -747,7 +747,8 @@ void RVVEmitter::createRVVIntrinsics(
     // We don't emit vsetvli and vsetvlimax for SemaRecord.
     // They are written in riscv_vector.td and will emit those marco define in
     // riscv_vector.h
-    if (Name == "vsetvli" || Name == "vsetvlimax")
+    if (Name == "vsetvli" || Name == "vsetvlimax" || Name == "vsetvli_bf" ||
+        Name == "vsetvlimax_bf")
       continue;
 
     if (!SemaRecords)

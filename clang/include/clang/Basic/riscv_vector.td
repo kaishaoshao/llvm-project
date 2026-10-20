@@ -1223,7 +1223,11 @@ defm : RVVIndexedSegStoreTuple<"vsoxseg">;
 // 11. Vector Integer Arithmetic Instructions
 // 11.1. Vector Single-Width Integer Add and Subtract
 let UnMaskedPolicyScheme = HasPassthruOperand in {
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vadd : RVVOutOp1BuiltinSet<"vadd", "csil", [["vv", "v", "vvv"], ["vx", "v", "vve"]]>;
 defm vadd : RVVIntBinBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vsub : RVVOutOp1BuiltinSet<"vsub", "csil", [["vv", "v", "vvv"], ["vx", "v", "vve"]]>;
 defm vsub : RVVIntBinBuiltinSet;
 defm vrsub : RVVOutOp1BuiltinSet<"vrsub", "csil",
                                  [["vx", "v", "vve"],
@@ -1270,27 +1274,51 @@ let Log2LMUL = [-3, -2, -1, 0] in {
 // 11.4. Vector Integer Add-with-Carry / Subtract-with-Borrow Instructions
 let HasMasked = false, MaskedPolicyScheme = NonePolicy in {
   let UnMaskedPolicyScheme = HasPassthruOperand in {
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vadc : RVVCarryinBuiltinSet;
     defm vadc : RVVCarryinBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vsbc : RVVCarryinBuiltinSet;
     defm vsbc : RVVCarryinBuiltinSet;
   }
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
   defm vmadc : RVVCarryOutInBuiltinSet<"vmadc_carry_in">;
+  defm vmadc : RVVCarryOutInBuiltinSet<"vmadc_carry_in">;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vmadc : RVVSignedMaskOutBuiltinSet;
   defm vmadc : RVVIntMaskOutBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
   defm vmsbc : RVVCarryOutInBuiltinSet<"vmsbc_borrow_in">;
+  defm vmsbc : RVVCarryOutInBuiltinSet<"vmsbc_borrow_in">;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vmsbc : RVVSignedMaskOutBuiltinSet;
   defm vmsbc : RVVIntMaskOutBuiltinSet;
 }
 
 // 11.5. Vector Bitwise Logical Instructions
 let UnMaskedPolicyScheme = HasPassthruOperand in {
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vand : RVVOutOp1BuiltinSet<"vand", "csil", [["vv", "v", "vvv"], ["vx", "v", "vve"]]>;
 defm vand : RVVIntBinBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vxor : RVVOutOp1BuiltinSet<"vxor", "csil", [["vv", "v", "vvv"], ["vx", "v", "vve"]]>;
 defm vxor : RVVIntBinBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vor : RVVOutOp1BuiltinSet<"vor", "csil", [["vv", "v", "vvv"], ["vx", "v", "vve"]]>;
 defm vor : RVVIntBinBuiltinSet;
 }
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vnot_v : RVVPseudoVNotBuiltin<"vxor", "csil">;
 defm vnot_v : RVVPseudoVNotBuiltin<"vxor", "csil">;
 
 // 11.6. Vector Single-Width Shift Instructions
 let UnMaskedPolicyScheme = HasPassthruOperand in {
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vsll : RVVSignedShiftBuiltinSet;
 defm vsll : RVVShiftBuiltinSet;
 defm vsrl : RVVUnsignedShiftBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vsra : RVVSignedShiftBuiltinSet;
 defm vsra : RVVSignedShiftBuiltinSet;
 
 // 11.7. Vector Narrowing Integer Right Shift Instructions
@@ -1304,27 +1332,47 @@ defm vncvt_x_x_w : RVVPseudoVNCVTBuiltin<"vnsrl", "vncvt_x", "csi",
 // 11.8. Vector Integer Compare Instructions
 let MaskedPolicyScheme = HasPassthruOperand,
     HasTailPolicy = false in {
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vmseq : RVVSignedMaskOutBuiltinSet;
 defm vmseq : RVVIntMaskOutBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vmsne : RVVSignedMaskOutBuiltinSet;
 defm vmsne : RVVIntMaskOutBuiltinSet;
 defm vmsltu : RVVUnsignedMaskOutBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vmslt : RVVSignedMaskOutBuiltinSet;
 defm vmslt : RVVSignedMaskOutBuiltinSet;
 defm vmsleu : RVVUnsignedMaskOutBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vmsle : RVVSignedMaskOutBuiltinSet;
 defm vmsle : RVVSignedMaskOutBuiltinSet;
 defm vmsgtu : RVVUnsignedMaskOutBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vmsgt : RVVSignedMaskOutBuiltinSet;
 defm vmsgt : RVVSignedMaskOutBuiltinSet;
 defm vmsgeu : RVVUnsignedMaskOutBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vmsge : RVVSignedMaskOutBuiltinSet;
 defm vmsge : RVVSignedMaskOutBuiltinSet;
 }
 
 // 11.9. Vector Integer Min/Max Instructions
 let UnMaskedPolicyScheme = HasPassthruOperand in {
 defm vminu : RVVUnsignedBinBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vmin : RVVSignedBinBuiltinSet;
 defm vmin : RVVSignedBinBuiltinSet;
 defm vmaxu : RVVUnsignedBinBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vmax : RVVSignedBinBuiltinSet;
 defm vmax : RVVSignedBinBuiltinSet;
 
 // 11.10. Vector Single-Width Integer Multiply Instructions
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vmul : RVVOutOp1BuiltinSet<"vmul", "csil", [["vv", "v", "vvv"], ["vx", "v", "vve"]]>;
 defm vmul : RVVIntBinBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vmulh : RVVSignedBinBuiltinSet;
 defm vmulh : RVVSignedBinBuiltinSet;
 defm vmulhu : RVVUnsignedBinBuiltinSet;
 defm vmulhsu : RVVOutOp1BuiltinSet<"vmulhsu", "csil",
@@ -1333,8 +1381,12 @@ defm vmulhsu : RVVOutOp1BuiltinSet<"vmulhsu", "csil",
 
 // 11.11. Vector Integer Divide Instructions
 defm vdivu : RVVUnsignedBinBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vdiv : RVVSignedBinBuiltinSet;
 defm vdiv : RVVSignedBinBuiltinSet;
 defm vremu : RVVUnsignedBinBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vrem : RVVSignedBinBuiltinSet;
 defm vrem : RVVSignedBinBuiltinSet;
 }
 
@@ -1353,9 +1405,17 @@ defm vwmulsu : RVVOutOp0Op1BuiltinSet<"vwmulsu", "csi",
 
 // 11.13. Vector Single-Width Integer Multiply-Add Instructions
 let UnMaskedPolicyScheme = HasPolicyOperand in {
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vmacc : RVVIntTerBuiltinSet;
 defm vmacc  : RVVIntTerBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
 defm vnmsac : RVVIntTerBuiltinSet;
+defm vnmsac : RVVIntTerBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vmadd : RVVIntTerBuiltinSet;
 defm vmadd  : RVVIntTerBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vnmsub : RVVIntTerBuiltinSet;
 defm vnmsub : RVVIntTerBuiltinSet;
 
 // 11.14. Vector Widening Integer Multiply-Add Instructions
@@ -1386,6 +1446,12 @@ let HasMasked = false,
         Ops.insert(Ops.begin(), llvm::PoisonValue::get(ResultType));
       IntrinsicTypes = {ResultType, Ops[2]->getType(), Ops.back()->getType()};
     }] in {
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+  defm vmerge : RVVOutOp1BuiltinSet<"vmerge", "csil",
+                                    [["vvm", "v", "vvvm"],
+                                     ["vxm", "v", "vvem"],
+                                     ["vvm", "Uv", "UvUvUvm"],
+                                     ["vxm", "Uv", "UvUvUem"]]>;
   defm vmerge : RVVOutOp1BuiltinSet<"vmerge", "csil",
                                     [["vvm", "v", "vvvm"],
                                      ["vxm", "v", "vvem"],
@@ -1423,8 +1489,12 @@ def vxrm_enum : RVVHeader;
 // 12.1. Vector Single-Width Saturating Add and Subtract
 let UnMaskedPolicyScheme = HasPassthruOperand in {
 defm vsaddu : RVVUnsignedBinBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vsadd : RVVSignedBinBuiltinSet;
 defm vsadd : RVVSignedBinBuiltinSet;
 defm vssubu : RVVUnsignedBinBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vssub : RVVSignedBinBuiltinSet;
 defm vssub : RVVSignedBinBuiltinSet;
 
 let ManualCodegen = [{
@@ -1464,15 +1534,23 @@ let ManualCodegen = [{
 }] in {
   // 12.2. Vector Single-Width Averaging Add and Subtract
   defm vaaddu : RVVUnsignedBinBuiltinSetRoundingMode;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+  defm vaadd : RVVSignedBinBuiltinSetRoundingMode;
   defm vaadd : RVVSignedBinBuiltinSetRoundingMode;
   defm vasubu : RVVUnsignedBinBuiltinSetRoundingMode;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+  defm vasub : RVVSignedBinBuiltinSetRoundingMode;
   defm vasub : RVVSignedBinBuiltinSetRoundingMode;
 
   // 12.3. Vector Single-Width Fractional Multiply with Rounding and Saturation
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+  defm vsmul : RVVSignedBinBuiltinSetRoundingMode;
   defm vsmul : RVVSignedBinBuiltinSetRoundingMode;
 
   // 12.4. Vector Single-Width Scaling Shift Instructions
   defm vssrl : RVVUnsignedShiftBuiltinSetRoundingMode;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+  defm vssra : RVVSignedShiftBuiltinSetRoundingMode;
   defm vssra : RVVSignedShiftBuiltinSetRoundingMode;
 }
 
@@ -1905,26 +1983,36 @@ let ManualCodegen = [{
   let HasFRMRoundModeOp = 1 in {
     // 13.8. Vector Floating-Point Square-Root Instruction
     defm vfsqrt : RVVOutBuiltinSet<"vfsqrt", "fd", [["v", "v", "vvu"]]>;
+    let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+    defm vfsqrt : RVVOutBuiltinSet<"vfsqrt", "fd", [["v", "v", "vvu"]]>;
     let RequiredFeatures = ["zvfh"] in
       defm vfsqrt : RVVOutBuiltinSet<"vfsqrt", "x", [["v", "v", "vvu"]]>;
 
     // 13.10. Vector Floating-Point Reciprocal Estimate Instruction
+    defm vfrec7 : RVVOutBuiltinSet<"vfrec7", "fd", [["v", "v", "vvu"]]>;
+    let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
     defm vfrec7 : RVVOutBuiltinSet<"vfrec7", "fd", [["v", "v", "vvu"]]>;
     let RequiredFeatures = ["zvfh"] in
       defm vfrec7 : RVVOutBuiltinSet<"vfrec7", "x", [["v", "v", "vvu"]]>;
   }
   // 13.8. Vector Floating-Point Square-Root Instruction
   defm vfsqrt : RVVOutBuiltinSet<"vfsqrt", "fd", [["v", "v", "vv"]]>;
+  let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+  defm vfsqrt : RVVOutBuiltinSet<"vfsqrt", "fd", [["v", "v", "vv"]]>;
   let RequiredFeatures = ["zvfh"] in
     defm vfsqrt : RVVOutBuiltinSet<"vfsqrt", "x", [["v", "v", "vv"]]>;
 
   // 13.10. Vector Floating-Point Reciprocal Estimate Instruction
+  defm vfrec7 : RVVOutBuiltinSet<"vfrec7", "fd", [["v", "v", "vv"]]>;
+  let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
   defm vfrec7 : RVVOutBuiltinSet<"vfrec7", "fd", [["v", "v", "vv"]]>;
   let RequiredFeatures = ["zvfh"] in
     defm vfrec7 : RVVOutBuiltinSet<"vfrec7", "x", [["v", "v", "vv"]]>;
 }
 
 // 13.9. Vector Floating-Point Reciprocal Square-Root Estimate Instruction
+defm vfrsqrt7 : RVVOutBuiltinSet<"vfrsqrt7", "fd", [["v", "v", "vv"]]>;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
 defm vfrsqrt7 : RVVOutBuiltinSet<"vfrsqrt7", "fd", [["v", "v", "vv"]]>;
 let RequiredFeatures = ["zvfh"] in
   defm vfrsqrt7 : RVVOutBuiltinSet<"vfrsqrt7", "x", [["v", "v", "vv"]]>;
@@ -1939,8 +2027,12 @@ defm vfsgnjn : RVVFloatingBinBuiltinSet;
 defm vfsgnjx : RVVFloatingBinBuiltinSet;
 }
 defm vfneg_v : RVVPseudoVFUnaryBuiltin<"vfsgnjn", "fd">;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+defm vfneg_v : RVVPseudoVFUnaryBuiltin<"vfsgnjn", "fd">;
 let RequiredFeatures = ["zvfh"] in
   defm vfneg_v : RVVPseudoVFUnaryBuiltin<"vfsgnjn", "x">;
+defm vfabs_v : RVVPseudoVFUnaryBuiltin<"vfsgnjx", "fd">;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
 defm vfabs_v : RVVPseudoVFUnaryBuiltin<"vfsgnjx", "fd">;
 let RequiredFeatures = ["zvfh"] in
   defm vfabs_v : RVVPseudoVFUnaryBuiltin<"vfsgnjx", "x">;
@@ -1978,6 +2070,9 @@ let HasMasked = false,
                                     [["vvm", "v", "vvvm"]]>;
   defm vfmerge : RVVOutOp1BuiltinSet<"vfmerge", "fd",
                                      [["vfm", "v", "vvem"]]>;
+                                     let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+                                       defm vfmerge : RVVOutOp1BuiltinSet<"vfmerge", "fd",
+                                                                          [["vfm", "v", "vvem"]]>;
   let RequiredFeatures = ["zvfh"] in
     defm vfmerge : RVVOutOp1BuiltinSet<"vfmerge", "x",
                                        [["vfm", "v", "vvem"]]>;
@@ -1991,6 +2086,9 @@ let HasMasked = false,
     OverloadedName = "vfmv_v" in {
   defm vfmv_v : RVVOutBuiltinSet<"vfmv_v_f", "fd",
                                  [["f", "v", "ve"]]>;
+                                 let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+                                   defm vfmv_v : RVVOutBuiltinSet<"vfmv_v_f", "fd",
+                                                                  [["f", "v", "ve"]]>;
   let RequiredFeatures = ["zvfh"] in
     defm vfmv_v : RVVOutBuiltinSet<"vfmv_v_f", "x",
                                    [["f", "v", "ve"]]>;
@@ -2242,13 +2340,25 @@ let ManualCodegen = [{
 let UnMaskedPolicyScheme = HasPassthruOperand,
     MaskedPolicyScheme = HasPassthruOperand,
     HasMaskPolicy = false in {
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vredsum : RVVSignedReductionBuiltin;
 defm vredsum : RVVIntReductionBuiltinSet;
 defm vredmaxu : RVVUnsignedReductionBuiltin;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vredmax : RVVSignedReductionBuiltin;
 defm vredmax : RVVSignedReductionBuiltin;
 defm vredminu : RVVUnsignedReductionBuiltin;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
 defm vredmin : RVVSignedReductionBuiltin;
+defm vredmin : RVVSignedReductionBuiltin;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vredand : RVVSignedReductionBuiltin;
 defm vredand : RVVIntReductionBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vredor : RVVSignedReductionBuiltin;
 defm vredor : RVVIntReductionBuiltinSet;
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vredxor : RVVSignedReductionBuiltin;
 defm vredxor : RVVIntReductionBuiltinSet;
 
 // 14.2. Vector Widening Integer Reduction Instructions
@@ -2365,6 +2475,9 @@ let UnMaskedPolicyScheme = HasPassthruOperand, SupportOverloading = false in {
   defm viota : RVVOutBuiltinSet<"viota", "csil", [["m", "Uv", "Uvm"]]>;
 
   // 15.9. Vector Element Index Instruction
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+  defm vid : RVVOutBuiltinSet<"vid", "csil", [["v", "v", "v"],
+                                              ["v", "Uv", "Uv"]]>;
   defm vid : RVVOutBuiltinSet<"vid", "csil", [["v", "v", "v"],
                                               ["v", "Uv", "Uv"]]>;
 }
@@ -2373,9 +2486,21 @@ let UnMaskedPolicyScheme = HasPassthruOperand, SupportOverloading = false in {
 // 16.1. Integer Scalar Move Instructions
 let HasMasked = false, MaskedPolicyScheme = NonePolicy in {
   let HasVL = false, OverloadedName = "vmv_x" in
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
     defm vmv_x : RVVOp0BuiltinSet<"vmv_x_s", "csil",
                                    [["s", "ve", "ev"],
                                     ["s", "UvUe", "UeUv"]]>;
+  let HasVL = false, OverloadedName = "vmv_x" in
+    defm vmv_x : RVVOp0BuiltinSet<"vmv_x_s", "csil",
+                                   [["s", "ve", "ev"],
+                                    ["s", "UvUe", "UeUv"]]>;
+  let OverloadedName = "vmv_s",
+      UnMaskedPolicyScheme = HasPassthruOperand,
+      SupportOverloading = false in
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+    defm vmv_s : RVVOutBuiltinSet<"vmv_s_x", "csil",
+                                   [["x", "v", "ve"],
+                                    ["x", "Uv", "UvUe"]]>;
   let OverloadedName = "vmv_s",
       UnMaskedPolicyScheme = HasPassthruOperand,
       SupportOverloading = false in
@@ -2389,6 +2514,9 @@ let HasMasked = false, MaskedPolicyScheme = NonePolicy in {
   let HasVL = false, OverloadedName = "vfmv_f" in {
     defm vfmv_f : RVVOp0BuiltinSet<"vfmv_f_s", "fd",
                                    [["s", "ve", "ev"]]>;
+                                   let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+                                       defm vfmv_f : RVVOp0BuiltinSet<"vfmv_f_s", "fd",
+                                                                      [["s", "ve", "ev"]]>;
     let RequiredFeatures = ["zvfh"] in
       defm vfmv_f : RVVOp0BuiltinSet<"vfmv_f_s", "x",
                                      [["s", "ve", "ev"]]>;
@@ -2399,6 +2527,10 @@ let HasMasked = false, MaskedPolicyScheme = NonePolicy in {
     defm vfmv_s : RVVOutBuiltinSet<"vfmv_s_f", "fd",
                                    [["f", "v", "ve"],
                                     ["x", "Uv", "UvUe"]]>;
+                                    let RequiredFeatures = ["xtsm82s"], TypeRange = "yx" in
+                                        defm vfmv_s : RVVOutBuiltinSet<"vfmv_s_f", "fd",
+                                                                       [["f", "v", "ve"],
+                                                                        ["x", "Uv", "UvUe"]]>;
     let RequiredFeatures = ["zvfh"] in
       defm vfmv_s : RVVOutBuiltinSet<"vfmv_s_f", "x",
                                      [["f", "v", "ve"],
@@ -2414,10 +2546,14 @@ defm vslidedown : RVVSlideDownBuiltinSet;
 
 // 16.3.3. Vector Slide1up Instructions
 let UnMaskedPolicyScheme = HasPassthruOperand in {
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vslide1up : RVVSlideOneBuiltinSet;
 defm vslide1up : RVVSlideOneBuiltinSet;
 defm vfslide1up : RVVFloatingBinVFBuiltinSet;
 
 // 16.3.4. Vector Slide1down Instruction
+let RequiredFeatures = ["xtsm82s"], TypeRange = "csily" in
+defm vslide1down : RVVSlideOneBuiltinSet;
 defm vslide1down : RVVSlideOneBuiltinSet;
 defm vfslide1down : RVVFloatingBinVFBuiltinSet;
 
@@ -2833,4 +2969,1816 @@ let UnMaskedPolicyScheme = HasPolicyOperand, HasMasked = false in {
     let UnMaskedPolicyScheme = HasPassthruOperand in
     defm vsm3me  : RVVOutOp1BuiltinSet<"vsm3me", "i", [["vv", "Uv", "UvUvUv"]]>;
   }
+}
+//===----------------------------------------------------------------------===//
+// XTsm82s vector builtins.
+//===----------------------------------------------------------------------===//
+let RequiredFeatures = ["xtsm82s"], Name = "vl2d_v", TypeRange = "s", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0] in
+defm vl2d_v : RVVOutOp1BuiltinSet<"vl2d", "s", [["x", "v", "vPCe"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vl2d_v", TypeRange = "s", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0] in
+defm vl2d_v : RVVOutOp1BuiltinSet<"vl2d", "s", [["x", "Uv", "UvPCUe"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vs2d_v", TypeRange = "s", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+            // Builtin: (mask, ptr, value, vl). Intrinsic: (value, ptr, mask, vl)
+            std::swap(Ops[0], Ops[2]);
+        } else {
+            // Builtin: (ptr, value, vl). Intrinsic: (value, ptr, vl)
+            std::swap(Ops[0], Ops[1]);
+        }
+        if (IsMasked)
+            IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[3]->getType()};
+        else
+            IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType()};
+    }] in
+defm vs2d_v : RVVOutOp1BuiltinSet<"vs2d", "s", [["x", "v", "0Pev"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vs2d_v", TypeRange = "s", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+            // Builtin: (mask, ptr, value, vl). Intrinsic: (value, ptr, mask, vl)
+            std::swap(Ops[0], Ops[2]);
+        } else {
+            // Builtin: (ptr, value, vl). Intrinsic: (value, ptr, vl)
+            std::swap(Ops[0], Ops[1]);
+        }
+        if (IsMasked)
+            IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[3]->getType()};
+        else
+            IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType()};
+    }] in
+defm vs2d_v : RVVOutOp1BuiltinSet<"vs2d", "s", [["x", "Uv", "0PUeUv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vluxei32_sync_v", TypeRange = "s", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vluxei32_sync_v : RVVOutOp1BuiltinSet<"vluxei_sync", "s", [["x", "v", "vPCe(Log2EEW:5)Uv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vluxei32_sync_v", TypeRange = "s", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vluxei32_sync_v : RVVOutOp1BuiltinSet<"vluxei_sync", "s", [["x", "Uv", "UvPCUe(Log2EEW:5)Uv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsuxei32_sync_v", TypeRange = "s", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+          // Builtin: (mask, ptr, index, value, vl). Intrinsic: (value, ptr, index, mask, vl)
+          std::swap(Ops[0], Ops[3]);
+        } else {
+          // Builtin: (ptr, index, value, vl). Intrinsic: (value, ptr, index, vl)
+          std::rotate(Ops.begin(), Ops.begin() + 2, Ops.begin() + 3);
+        }
+        if (IsMasked)
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[4]->getType()};
+        else
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[3]->getType()};
+      }] in
+defm vsuxei32_sync_v : RVVOutOp1BuiltinSet<"vsuxei_sync", "s", [["x", "v", "0Pe(Log2EEW:5)Uvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsuxei32_sync_v", TypeRange = "s", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+          // Builtin: (mask, ptr, index, value, vl). Intrinsic: (value, ptr, index, mask, vl)
+          std::swap(Ops[0], Ops[3]);
+        } else {
+          // Builtin: (ptr, index, value, vl). Intrinsic: (value, ptr, index, vl)
+          std::rotate(Ops.begin(), Ops.begin() + 2, Ops.begin() + 3);
+        }
+        if (IsMasked)
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[4]->getType()};
+        else
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[3]->getType()};
+      }] in
+defm vsuxei32_sync_v : RVVOutOp1BuiltinSet<"vsuxei_sync", "s", [["x", "Uv", "0PUe(Log2EEW:5)UvUv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfadd_vs", OverloadedName = "vfadd_vs", TypeRange = "yxfd", HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, op1, round_mode, vl)
+        // Masked:   (passthru, vector_in, vector_in, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 7> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 6 : Ops.size() == 5) :
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+        Operands.push_back(Ops[Offset + 1]); // op1
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 2]); // frm
+        Operands.push_back(Ops[Offset + 3]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 2]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset + 1]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfadd_vs : RVVOutOp1BuiltinSet<"vfadd_vs", "yxfd", [["x", "v", "vvSvu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfsub_vs", OverloadedName = "vfsub_vs", TypeRange = "yxfd", HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, op1, round_mode, vl)
+        // Masked:   (passthru, vector_in, vector_in, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 7> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 6 : Ops.size() == 5) :
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+        Operands.push_back(Ops[Offset + 1]); // op1
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 2]); // frm
+        Operands.push_back(Ops[Offset + 3]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 2]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset + 1]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfsub_vs : RVVOutOp1BuiltinSet<"vfsub_vs", "yxfd", [["x", "v", "vvSvu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfmul_vs", OverloadedName = "vfmul_vs", TypeRange = "yxfd", HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, op1, round_mode, vl)
+        // Masked:   (passthru, vector_in, vector_in, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 7> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 6 : Ops.size() == 5) :
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+        Operands.push_back(Ops[Offset + 1]); // op1
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 2]); // frm
+        Operands.push_back(Ops[Offset + 3]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 2]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset + 1]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfmul_vs : RVVOutOp1BuiltinSet<"vfmul_vs", "yxfd", [["x", "v", "vvSvu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfadd_vs", OverloadedName = "vfadd_vs", TypeRange = "yxfd", UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, op1, round_mode, vl)
+        // Masked:   (passthru, vector_in, vector_in, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 7> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 6 : Ops.size() == 5) :
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+        Operands.push_back(Ops[Offset + 1]); // op1
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 2]); // frm
+        Operands.push_back(Ops[Offset + 3]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 2]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset + 1]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfadd_vs : RVVOutOp1BuiltinSet<"vfadd_vs", "yxfd", [["x", "v", "vvSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfsub_vs", OverloadedName = "vfsub_vs", TypeRange = "yxfd", UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, op1, round_mode, vl)
+        // Masked:   (passthru, vector_in, vector_in, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 7> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 6 : Ops.size() == 5) :
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+        Operands.push_back(Ops[Offset + 1]); // op1
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 2]); // frm
+        Operands.push_back(Ops[Offset + 3]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 2]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset + 1]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfsub_vs : RVVOutOp1BuiltinSet<"vfsub_vs", "yxfd", [["x", "v", "vvSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfmul_vs", OverloadedName = "vfmul_vs", TypeRange = "yxfd", UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, op1, round_mode, vl)
+        // Masked:   (passthru, vector_in, vector_in, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 7> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 6 : Ops.size() == 5) :
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+        Operands.push_back(Ops[Offset + 1]); // op1
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 2]); // frm
+        Operands.push_back(Ops[Offset + 3]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 2]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset + 1]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfmul_vs : RVVOutOp1BuiltinSet<"vfmul_vs", "yxfd", [["x", "v", "vvSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfmin_vs", OverloadedName = "vfmin_vs", TypeRange = "yxfd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfmin_vs : RVVOutOp1BuiltinSet<"vfmin_vs", "yxfd", [["x", "v", "vvSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfmax_vs", OverloadedName = "vfmax_vs", TypeRange = "yxfd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfmax_vs : RVVOutOp1BuiltinSet<"vfmax_vs", "yxfd", [["x", "v", "vvSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vand_vs", OverloadedName = "vand_vs", TypeRange = "csily", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vand_vs : RVVOutOp1BuiltinSet<"vand_vs", "csily", [["x", "v", "vvSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vand_vs", OverloadedName = "vand_vs", TypeRange = "csily", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vand_vs : RVVOutOp1BuiltinSet<"vand_vs", "csily", [["x", "Uv", "UvUvUSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vxor_vs", OverloadedName = "vxor_vs", TypeRange = "csily", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vxor_vs : RVVOutOp1BuiltinSet<"vxor_vs", "csily", [["x", "v", "vvSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vxor_vs", OverloadedName = "vxor_vs", TypeRange = "csily", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vxor_vs : RVVOutOp1BuiltinSet<"vxor_vs", "csily", [["x", "Uv", "UvUvUSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vor_vs", OverloadedName = "vor_vs", TypeRange = "csily", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vor_vs : RVVOutOp1BuiltinSet<"vor_vs", "csily", [["x", "v", "vvSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vor_vs", OverloadedName = "vor_vs", TypeRange = "csily", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vor_vs : RVVOutOp1BuiltinSet<"vor_vs", "csily", [["x", "Uv", "UvUvUSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vminu_vs", OverloadedName = "vminu_vs", TypeRange = "csily", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vminu_vs : RVVOutOp1BuiltinSet<"vminu_vs", "csily", [["x", "Uv", "UvUvUSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vmin_vs", OverloadedName = "vmin_vs", TypeRange = "csily", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vmin_vs : RVVOutOp1BuiltinSet<"vmin_vs", "csily", [["x", "v", "vvSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vmaxu_vs", OverloadedName = "vmaxu_vs", TypeRange = "csily", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vmaxu_vs : RVVOutOp1BuiltinSet<"vmaxu_vs", "csily", [["x", "Uv", "UvUvUSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vmax_vs", OverloadedName = "vmax_vs", TypeRange = "csily", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vmax_vs : RVVOutOp1BuiltinSet<"vmax_vs", "csily", [["x", "v", "vvSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfeq_vv", TypeRange = "fd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfeq_vv : RVVOutOp1BuiltinSet<"vfeq", "fd", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfeq_vf", TypeRange = "fd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfeq_vf : RVVOutOp1BuiltinSet<"vfeq", "fd", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfeq_vv", TypeRange = "yx", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfeq_vv : RVVOutOp1BuiltinSet<"vfeq", "yx", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfeq_vf", TypeRange = "yx", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfeq_vf : RVVOutOp1BuiltinSet<"vfeq", "yx", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfeq_vv", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfeq_vv : RVVOutOp1BuiltinSet<"vfeq", "x", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfeq_vf", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfeq_vf : RVVOutOp1BuiltinSet<"vfeq", "x", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfeq_vs", OverloadedName = "vfeq_vs", TypeRange = "yxfd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfeq_vs : RVVOutOp1BuiltinSet<"vfeq_vs", "yxfd", [["x", "v", "vvSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfle_vv", TypeRange = "fd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfle_vv : RVVOutOp1BuiltinSet<"vfle", "fd", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfle_vf", TypeRange = "fd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfle_vf : RVVOutOp1BuiltinSet<"vfle", "fd", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfle_vv", TypeRange = "yx", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfle_vv : RVVOutOp1BuiltinSet<"vfle", "yx", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfle_vf", TypeRange = "yx", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfle_vf : RVVOutOp1BuiltinSet<"vfle", "yx", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfle_vv", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfle_vv : RVVOutOp1BuiltinSet<"vfle", "x", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfle_vf", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfle_vf : RVVOutOp1BuiltinSet<"vfle", "x", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfle_vs", OverloadedName = "vfle_vs", TypeRange = "yxfd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfle_vs : RVVOutOp1BuiltinSet<"vfle_vs", "yxfd", [["x", "v", "vvSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vflt_vv", TypeRange = "fd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vflt_vv : RVVOutOp1BuiltinSet<"vflt", "fd", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vflt_vf", TypeRange = "fd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vflt_vf : RVVOutOp1BuiltinSet<"vflt", "fd", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vflt_vv", TypeRange = "yx", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vflt_vv : RVVOutOp1BuiltinSet<"vflt", "yx", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vflt_vf", TypeRange = "yx", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vflt_vf : RVVOutOp1BuiltinSet<"vflt", "yx", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vflt_vv", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vflt_vv : RVVOutOp1BuiltinSet<"vflt", "x", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vflt_vf", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vflt_vf : RVVOutOp1BuiltinSet<"vflt", "x", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vflt_vs", OverloadedName = "vflt_vs", TypeRange = "yxfd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vflt_vs : RVVOutOp1BuiltinSet<"vflt_vs", "yxfd", [["x", "v", "vvSv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfne_vv", TypeRange = "fd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfne_vv : RVVOutOp1BuiltinSet<"vfne", "fd", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfne_vf", TypeRange = "fd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfne_vf : RVVOutOp1BuiltinSet<"vfne", "fd", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfne_vv", TypeRange = "yx", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfne_vv : RVVOutOp1BuiltinSet<"vfne", "yx", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfne_vf", TypeRange = "yx", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfne_vf : RVVOutOp1BuiltinSet<"vfne", "yx", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfne_vv", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfne_vv : RVVOutOp1BuiltinSet<"vfne", "x", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfne_vf", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfne_vf : RVVOutOp1BuiltinSet<"vfne", "x", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfgt_vv", TypeRange = "fd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfgt_vv : RVVOutOp1BuiltinSet<"vfgt", "fd", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfgt_vf", TypeRange = "fd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfgt_vf : RVVOutOp1BuiltinSet<"vfgt", "fd", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfgt_vv", TypeRange = "yx", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfgt_vv : RVVOutOp1BuiltinSet<"vfgt", "yx", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfgt_vf", TypeRange = "yx", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfgt_vf : RVVOutOp1BuiltinSet<"vfgt", "yx", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfgt_vv", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfgt_vv : RVVOutOp1BuiltinSet<"vfgt", "x", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfgt_vf", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfgt_vf : RVVOutOp1BuiltinSet<"vfgt", "x", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfge_vv", TypeRange = "fd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfge_vv : RVVOutOp1BuiltinSet<"vfge", "fd", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfge_vf", TypeRange = "fd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfge_vf : RVVOutOp1BuiltinSet<"vfge", "fd", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfge_vv", TypeRange = "yx", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfge_vv : RVVOutOp1BuiltinSet<"vfge", "yx", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfge_vf", TypeRange = "yx", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfge_vf : RVVOutOp1BuiltinSet<"vfge", "yx", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfge_vv", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfge_vv : RVVOutOp1BuiltinSet<"vfge", "x", [["x", "v", "vvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfge_vf", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 1] in
+defm vfge_vf : RVVOutOp1BuiltinSet<"vfge", "x", [["x", "v", "vve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfncvtbf16_x_f_w", OverloadedName = "vfncvtbf16_x", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, frm, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfncvtbf16_x_f_w : RVVOutOp1BuiltinSet<"vfncvtbf16_x_f_w", "c", [["x", "Iv", "IvYwu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfncvtbf16_x_f_w", OverloadedName = "vfncvtbf16_x", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, frm, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfncvtbf16_x_f_w : RVVOutOp1BuiltinSet<"vfncvtbf16_x_f_w", "c", [["x", "Iv", "IvYw"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfncvte4m3_f_bf_w", OverloadedName = "vfncvte4m3_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, frm, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfncvte4m3_f_bf_w : RVVOutOp1BuiltinSet<"vfncvte4m3_f_bf_w", "c", [["x", "Yw", "vYwu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfncvte4m3_f_f_w", OverloadedName = "vfncvte4m3_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, frm, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfncvte4m3_f_f_w : RVVOutOp1BuiltinSet<"vfncvte4m3_f_f_w", "c", [["x", "Fw", "vFwu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfncvte4m3_f_bf_w", OverloadedName = "vfncvte4m3_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, frm, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfncvte4m3_f_bf_w : RVVOutOp1BuiltinSet<"vfncvte4m3_f_bf_w", "c", [["x", "Yw", "vYw"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfncvte4m3_f_f_w", OverloadedName = "vfncvte4m3_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, frm, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfncvte4m3_f_f_w : RVVOutOp1BuiltinSet<"vfncvte4m3_f_f_w", "c", [["x", "Fw", "vFw"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfncvte5m2_f_bf_w", OverloadedName = "vfncvte5m2_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, frm, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfncvte5m2_f_bf_w : RVVOutOp1BuiltinSet<"vfncvte5m2_f_bf_w", "c", [["x", "Yw", "vYwu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfncvte5m2_f_f_w", OverloadedName = "vfncvte5m2_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, frm, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfncvte5m2_f_f_w : RVVOutOp1BuiltinSet<"vfncvte5m2_f_f_w", "c", [["x", "Fw", "vFwu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfncvte5m2_f_bf_w", OverloadedName = "vfncvte5m2_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, frm, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfncvte5m2_f_bf_w : RVVOutOp1BuiltinSet<"vfncvte5m2_f_bf_w", "c", [["x", "Yw", "vYw"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfncvte5m2_f_f_w", OverloadedName = "vfncvte5m2_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, frm, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfncvte5m2_f_f_w : RVVOutOp1BuiltinSet<"vfncvte5m2_f_f_w", "c", [["x", "Fw", "vFw"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfncvtfp4_f_f_w", OverloadedName = "vfncvtfp4_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, frm, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfncvtfp4_f_f_w : RVVOutOp1BuiltinSet<"vfncvtfp4_f_f_w", "c", [["x", "Fw", "vFwu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfncvtfp4_f_bf_w", OverloadedName = "vfncvtfp4_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, frm, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfncvtfp4_f_bf_w : RVVOutOp1BuiltinSet<"vfncvtfp4_f_bf_w", "c", [["x", "Yw", "vYwu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfncvtfp4_f_bf_w", OverloadedName = "vfncvtfp4_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, frm, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfncvtfp4_f_bf_w : RVVOutOp1BuiltinSet<"vfncvtfp4_f_bf_w", "c", [["x", "Yw", "vYw"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfncvtfp4_f_f_w", OverloadedName = "vfncvtfp4_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, frm, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Ops[Offset]->getType(),
+                        Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfncvtfp4_f_f_w : RVVOutOp1BuiltinSet<"vfncvtfp4_f_f_w", "c", [["x", "Fw", "vFw"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfwcvte4m3_bf_f_v", OverloadedName = "vfwcvte4m3_bf", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0] in
+defm vfwcvte4m3_bf_f_v : RVVOutOp1BuiltinSet<"vfwcvte4m3_bf_f_v", "c", [["x", "Yw", "Ywv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfwcvte4m3_f_f_v", OverloadedName = "vfwcvte4m3_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0] in
+defm vfwcvte4m3_f_f_v : RVVOutOp1BuiltinSet<"vfwcvte4m3_f_f_v", "c", [["x", "Fw", "Fwv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfwcvte5m2_bf_f_v", OverloadedName = "vfwcvte5m2_bf", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0] in
+defm vfwcvte5m2_bf_f_v : RVVOutOp1BuiltinSet<"vfwcvte5m2_bf_f_v", "c", [["x", "Yw", "Ywv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfwcvte5m2_f_f_v", OverloadedName = "vfwcvte5m2_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0] in
+defm vfwcvte5m2_f_f_v : RVVOutOp1BuiltinSet<"vfwcvte5m2_f_f_v", "c", [["x", "Fw", "Fwv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfwcvtfp4_bf_f_v", OverloadedName = "vfwcvtfp4_bf", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0] in
+defm vfwcvtfp4_bf_f_v : RVVOutOp1BuiltinSet<"vfwcvtfp4_bf_f_v", "c", [["x", "Yw", "Ywv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfwcvtfp4_f_f_v", OverloadedName = "vfwcvtfp4_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0] in
+defm vfwcvtfp4_f_f_v : RVVOutOp1BuiltinSet<"vfwcvtfp4_f_f_v", "c", [["x", "Fw", "Fwv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfsquare_v", TypeRange = "yxfd", HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, round_mode, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfsquare_v : RVVOutOp1BuiltinSet<"vfsquare", "yxfd", [["x", "v", "vvu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vpow2_v", TypeRange = "yxfd", HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, round_mode, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vpow2_v : RVVOutOp1BuiltinSet<"vpow2", "yxfd", [["x", "v", "vvu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vlog2_v", TypeRange = "yxfd", HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, round_mode, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vlog2_v : RVVOutOp1BuiltinSet<"vlog2", "yxfd", [["x", "v", "vvu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsin_v", TypeRange = "yxfd", HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, round_mode, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vsin_v : RVVOutOp1BuiltinSet<"vsin", "yxfd", [["x", "v", "vvu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vcos_v", TypeRange = "yxfd", HasFRMRoundModeOp = true, UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, round_mode, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vcos_v : RVVOutOp1BuiltinSet<"vcos", "yxfd", [["x", "v", "vvu"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfsquare_v", TypeRange = "yxfd", UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, round_mode, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vfsquare_v : RVVOutOp1BuiltinSet<"vfsquare", "yxfd", [["x", "v", "vv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vpow2_v", TypeRange = "yxfd", UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, round_mode, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vpow2_v : RVVOutOp1BuiltinSet<"vpow2", "yxfd", [["x", "v", "vv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vlog2_v", TypeRange = "yxfd", UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, round_mode, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vlog2_v : RVVOutOp1BuiltinSet<"vlog2", "yxfd", [["x", "v", "vv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsin_v", TypeRange = "yxfd", UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, round_mode, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vsin_v : RVVOutOp1BuiltinSet<"vsin", "yxfd", [["x", "v", "vv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vcos_v", TypeRange = "yxfd", UnMaskedPolicyScheme = HasPassthruOperand, ManualCodegen = [{
+    {
+        // LLVM intrinsic
+        // Unmasked: (passthru, op0, round_mode, vl)
+        // Masked:   (passthru, op0, mask, frm, vl, policy)
+
+        SmallVector<llvm::Value*, 6> Operands;
+        bool HasMaskedOff = !(
+            (IsMasked && (PolicyAttrs & RVV_VTA) && (PolicyAttrs & RVV_VMA)) ||
+            (!IsMasked && PolicyAttrs & RVV_VTA));
+        bool HasRoundModeOp = IsMasked ?
+        (HasMaskedOff ? Ops.size() == 5 : Ops.size() == 4) :
+        (HasMaskedOff ? Ops.size() == 4 : Ops.size() == 3);
+
+        unsigned Offset = IsMasked ?
+            (HasMaskedOff ? 2 : 1) : (HasMaskedOff ? 1 : 0);
+
+        if (!HasMaskedOff)
+        Operands.push_back(llvm::PoisonValue::get(ResultType));
+        else
+        Operands.push_back(Ops[IsMasked ? 1 : 0]);
+
+        Operands.push_back(Ops[Offset]); // op0
+
+        if (IsMasked)
+        Operands.push_back(Ops[0]); // mask
+
+        if (HasRoundModeOp) {
+        Operands.push_back(Ops[Offset + 1]); // frm
+        Operands.push_back(Ops[Offset + 2]); // vl
+        } else {
+        Operands.push_back(ConstantInt::get(Ops[Offset + 1]->getType(), 7)); // frm
+        Operands.push_back(Ops[Offset + 1]); // vl
+        }
+
+        if (IsMasked)
+        Operands.push_back(ConstantInt::get(Ops.back()->getType(), PolicyAttrs));
+
+        IntrinsicTypes = {ResultType, Operands.back()->getType()};
+        llvm::Function *F = CGM.getIntrinsic(ID, IntrinsicTypes);
+        return Builder.CreateCall(F, Operands, "");
+    }
+    }] in
+defm vcos_v : RVVOutOp1BuiltinSet<"vcos", "yxfd", [["x", "v", "vv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vbit2fp_m", TypeRange = "xfd", HasMasked = false, UnMaskedPolicyScheme = HasPassthruOperand, MaskedPolicyScheme = NonePolicy, IntrinsicTypes = [-1] in
+defm vbit2fp_m : RVVOutOp1BuiltinSet<"vbit2fp", "xfd", [["x", "v", "vm"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vreverse_v", TypeRange = "csil", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1] in
+defm vreverse_v : RVVOutOp1BuiltinSet<"vreverse", "csil", [["x", "Uv", "UvUv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vreverse_v", TypeRange = "csilyxfd", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1] in
+defm vreverse_v : RVVOutOp1BuiltinSet<"vreverse", "csilyxfd", [["x", "v", "vv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vslh_vv", OverloadedName = "vslh_vv", TypeRange = "csi", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vslh_vv : RVVOutOp1BuiltinSet<"vslh", "csi", [["x", "w", "wvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vslh_vx", OverloadedName = "vslh_vx", TypeRange = "csi", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vslh_vx : RVVOutOp1BuiltinSet<"vslh", "csi", [["x", "w", "wve"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vslh_vv", OverloadedName = "vslh_vv", TypeRange = "csi", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vslh_vv : RVVOutOp1BuiltinSet<"vslh", "csi", [["x", "Uw", "UwUvUv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vslh_vx", OverloadedName = "vslh_vx", TypeRange = "csi", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vslh_vx : RVVOutOp1BuiltinSet<"vslh", "csi", [["x", "Uw", "UwUvUe"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vl2d_v", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0] in
+defm vl2d_v : RVVOutOp1BuiltinSet<"vl2d", "x", [["x", "v", "vPCe"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vl2d_v", TypeRange = "y", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0] in
+defm vl2d_v : RVVOutOp1BuiltinSet<"vl2d", "y", [["x", "v", "vPCe"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vl2d_v", TypeRange = "i", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0] in
+defm vl2d_v : RVVOutOp1BuiltinSet<"vl2d", "i", [["x", "v", "vPCe"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vl2d_v", TypeRange = "i", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0] in
+defm vl2d_v : RVVOutOp1BuiltinSet<"vl2d", "i", [["x", "Uv", "UvPCUe"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vl2d_v", TypeRange = "f", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0] in
+defm vl2d_v : RVVOutOp1BuiltinSet<"vl2d", "f", [["x", "v", "vPCe"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vs2d_v", TypeRange = "x", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+            // Builtin: (mask, ptr, value, vl). Intrinsic: (value, ptr, mask, vl)
+            std::swap(Ops[0], Ops[2]);
+        } else {
+            // Builtin: (ptr, value, vl). Intrinsic: (value, ptr, vl)
+            std::swap(Ops[0], Ops[1]);
+        }
+        if (IsMasked)
+            IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[3]->getType()};
+        else
+            IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType()};
+    }] in
+defm vs2d_v : RVVOutOp1BuiltinSet<"vs2d", "x", [["x", "v", "0Pev"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vs2d_v", TypeRange = "y", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+            // Builtin: (mask, ptr, value, vl). Intrinsic: (value, ptr, mask, vl)
+            std::swap(Ops[0], Ops[2]);
+        } else {
+            // Builtin: (ptr, value, vl). Intrinsic: (value, ptr, vl)
+            std::swap(Ops[0], Ops[1]);
+        }
+        if (IsMasked)
+            IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[3]->getType()};
+        else
+            IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType()};
+    }] in
+defm vs2d_v : RVVOutOp1BuiltinSet<"vs2d", "y", [["x", "v", "0Pev"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vs2d_v", TypeRange = "i", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+            // Builtin: (mask, ptr, value, vl). Intrinsic: (value, ptr, mask, vl)
+            std::swap(Ops[0], Ops[2]);
+        } else {
+            // Builtin: (ptr, value, vl). Intrinsic: (value, ptr, vl)
+            std::swap(Ops[0], Ops[1]);
+        }
+        if (IsMasked)
+            IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[3]->getType()};
+        else
+            IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType()};
+    }] in
+defm vs2d_v : RVVOutOp1BuiltinSet<"vs2d", "i", [["x", "v", "0Pev"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vs2d_v", TypeRange = "i", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+            // Builtin: (mask, ptr, value, vl). Intrinsic: (value, ptr, mask, vl)
+            std::swap(Ops[0], Ops[2]);
+        } else {
+            // Builtin: (ptr, value, vl). Intrinsic: (value, ptr, vl)
+            std::swap(Ops[0], Ops[1]);
+        }
+        if (IsMasked)
+            IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[3]->getType()};
+        else
+            IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType()};
+    }] in
+defm vs2d_v : RVVOutOp1BuiltinSet<"vs2d", "i", [["x", "Uv", "0PUeUv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vs2d_v", TypeRange = "f", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+            // Builtin: (mask, ptr, value, vl). Intrinsic: (value, ptr, mask, vl)
+            std::swap(Ops[0], Ops[2]);
+        } else {
+            // Builtin: (ptr, value, vl). Intrinsic: (value, ptr, vl)
+            std::swap(Ops[0], Ops[1]);
+        }
+        if (IsMasked)
+            IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[3]->getType()};
+        else
+            IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType()};
+    }] in
+defm vs2d_v : RVVOutOp1BuiltinSet<"vs2d", "f", [["x", "v", "0Pev"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "mov128_s_v", TypeRange = "csil", HasMasked = false, HasVL = false, MaskedPolicyScheme = NonePolicy, IntrinsicTypes = [0] in
+defm mov128_s_v : RVVOutOp1BuiltinSet<"mov128_s_v", "csil", [["x", "m", "rm"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "mov128_v_s", TypeRange = "csil", HasMasked = false, HasVL = false, MaskedPolicyScheme = NonePolicy, IntrinsicTypes = [-1] in
+defm mov128_v_s : RVVOutOp1BuiltinSet<"mov128_v_s", "csil", [["x", "m", "mr"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vluxei64_sync_v", TypeRange = "s", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vluxei64_sync_v : RVVOutOp1BuiltinSet<"vluxei_sync", "s", [["x", "v", "vPCe(Log2EEW:6)Uv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vluxei64_sync_v", TypeRange = "s", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vluxei64_sync_v : RVVOutOp1BuiltinSet<"vluxei_sync", "s", [["x", "Uv", "UvPCUe(Log2EEW:6)Uv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vluxei32_sync_v", TypeRange = "i", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vluxei32_sync_v : RVVOutOp1BuiltinSet<"vluxei_sync", "i", [["x", "v", "vPCe(Log2EEW:5)Uv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vluxei32_sync_v", TypeRange = "i", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vluxei32_sync_v : RVVOutOp1BuiltinSet<"vluxei_sync", "i", [["x", "Uv", "UvPCUe(Log2EEW:5)Uv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vluxei64_sync_v", TypeRange = "i", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vluxei64_sync_v : RVVOutOp1BuiltinSet<"vluxei_sync", "i", [["x", "v", "vPCe(Log2EEW:6)Uv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vluxei64_sync_v", TypeRange = "i", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vluxei64_sync_v : RVVOutOp1BuiltinSet<"vluxei_sync", "i", [["x", "Uv", "UvPCUe(Log2EEW:6)Uv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vluxei32_sync_v", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vluxei32_sync_v : RVVOutOp1BuiltinSet<"vluxei_sync", "x", [["x", "v", "vPCe(Log2EEW:5)Uv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vluxei64_sync_v", TypeRange = "x", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vluxei64_sync_v : RVVOutOp1BuiltinSet<"vluxei_sync", "x", [["x", "v", "vPCe(Log2EEW:6)Uv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vluxei32_sync_v", TypeRange = "f", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vluxei32_sync_v : RVVOutOp1BuiltinSet<"vluxei_sync", "f", [["x", "v", "vPCe(Log2EEW:5)Uv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vluxei64_sync_v", TypeRange = "f", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vluxei64_sync_v : RVVOutOp1BuiltinSet<"vluxei_sync", "f", [["x", "v", "vPCe(Log2EEW:6)Uv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vluxei32_sync_v", TypeRange = "y", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vluxei32_sync_v : RVVOutOp1BuiltinSet<"vluxei_sync", "y", [["x", "v", "vPCe(Log2EEW:5)Uv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vluxei64_sync_v", TypeRange = "y", UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0, 1] in
+defm vluxei64_sync_v : RVVOutOp1BuiltinSet<"vluxei_sync", "y", [["x", "v", "vPCe(Log2EEW:6)Uv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsuxei64_sync_v", TypeRange = "s", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+          // Builtin: (mask, ptr, index, value, vl). Intrinsic: (value, ptr, index, mask, vl)
+          std::swap(Ops[0], Ops[3]);
+        } else {
+          // Builtin: (ptr, index, value, vl). Intrinsic: (value, ptr, index, vl)
+          std::rotate(Ops.begin(), Ops.begin() + 2, Ops.begin() + 3);
+        }
+        if (IsMasked)
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[4]->getType()};
+        else
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[3]->getType()};
+      }] in
+defm vsuxei64_sync_v : RVVOutOp1BuiltinSet<"vsuxei_sync", "s", [["x", "v", "0Pe(Log2EEW:6)Uvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsuxei64_sync_v", TypeRange = "s", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+          // Builtin: (mask, ptr, index, value, vl). Intrinsic: (value, ptr, index, mask, vl)
+          std::swap(Ops[0], Ops[3]);
+        } else {
+          // Builtin: (ptr, index, value, vl). Intrinsic: (value, ptr, index, vl)
+          std::rotate(Ops.begin(), Ops.begin() + 2, Ops.begin() + 3);
+        }
+        if (IsMasked)
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[4]->getType()};
+        else
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[3]->getType()};
+      }] in
+defm vsuxei64_sync_v : RVVOutOp1BuiltinSet<"vsuxei_sync", "s", [["x", "Uv", "0PUe(Log2EEW:6)UvUv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsuxei32_sync_v", TypeRange = "i", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+          // Builtin: (mask, ptr, index, value, vl). Intrinsic: (value, ptr, index, mask, vl)
+          std::swap(Ops[0], Ops[3]);
+        } else {
+          // Builtin: (ptr, index, value, vl). Intrinsic: (value, ptr, index, vl)
+          std::rotate(Ops.begin(), Ops.begin() + 2, Ops.begin() + 3);
+        }
+        if (IsMasked)
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[4]->getType()};
+        else
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[3]->getType()};
+      }] in
+defm vsuxei32_sync_v : RVVOutOp1BuiltinSet<"vsuxei_sync", "i", [["x", "v", "0Pe(Log2EEW:5)Uvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsuxei32_sync_v", TypeRange = "i", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+          // Builtin: (mask, ptr, index, value, vl). Intrinsic: (value, ptr, index, mask, vl)
+          std::swap(Ops[0], Ops[3]);
+        } else {
+          // Builtin: (ptr, index, value, vl). Intrinsic: (value, ptr, index, vl)
+          std::rotate(Ops.begin(), Ops.begin() + 2, Ops.begin() + 3);
+        }
+        if (IsMasked)
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[4]->getType()};
+        else
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[3]->getType()};
+      }] in
+defm vsuxei32_sync_v : RVVOutOp1BuiltinSet<"vsuxei_sync", "i", [["x", "Uv", "0PUe(Log2EEW:5)UvUv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsuxei64_sync_v", TypeRange = "i", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+          // Builtin: (mask, ptr, index, value, vl). Intrinsic: (value, ptr, index, mask, vl)
+          std::swap(Ops[0], Ops[3]);
+        } else {
+          // Builtin: (ptr, index, value, vl). Intrinsic: (value, ptr, index, vl)
+          std::rotate(Ops.begin(), Ops.begin() + 2, Ops.begin() + 3);
+        }
+        if (IsMasked)
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[4]->getType()};
+        else
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[3]->getType()};
+      }] in
+defm vsuxei64_sync_v : RVVOutOp1BuiltinSet<"vsuxei_sync", "i", [["x", "v", "0Pe(Log2EEW:6)Uvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsuxei64_sync_v", TypeRange = "i", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+          // Builtin: (mask, ptr, index, value, vl). Intrinsic: (value, ptr, index, mask, vl)
+          std::swap(Ops[0], Ops[3]);
+        } else {
+          // Builtin: (ptr, index, value, vl). Intrinsic: (value, ptr, index, vl)
+          std::rotate(Ops.begin(), Ops.begin() + 2, Ops.begin() + 3);
+        }
+        if (IsMasked)
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[4]->getType()};
+        else
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[3]->getType()};
+      }] in
+defm vsuxei64_sync_v : RVVOutOp1BuiltinSet<"vsuxei_sync", "i", [["x", "Uv", "0PUe(Log2EEW:6)UvUv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsuxei32_sync_v", TypeRange = "x", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+          // Builtin: (mask, ptr, index, value, vl). Intrinsic: (value, ptr, index, mask, vl)
+          std::swap(Ops[0], Ops[3]);
+        } else {
+          // Builtin: (ptr, index, value, vl). Intrinsic: (value, ptr, index, vl)
+          std::rotate(Ops.begin(), Ops.begin() + 2, Ops.begin() + 3);
+        }
+        if (IsMasked)
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[4]->getType()};
+        else
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[3]->getType()};
+      }] in
+defm vsuxei32_sync_v : RVVOutOp1BuiltinSet<"vsuxei_sync", "x", [["x", "v", "0Pe(Log2EEW:5)Uvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsuxei64_sync_v", TypeRange = "x", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+          // Builtin: (mask, ptr, index, value, vl). Intrinsic: (value, ptr, index, mask, vl)
+          std::swap(Ops[0], Ops[3]);
+        } else {
+          // Builtin: (ptr, index, value, vl). Intrinsic: (value, ptr, index, vl)
+          std::rotate(Ops.begin(), Ops.begin() + 2, Ops.begin() + 3);
+        }
+        if (IsMasked)
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[4]->getType()};
+        else
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[3]->getType()};
+      }] in
+defm vsuxei64_sync_v : RVVOutOp1BuiltinSet<"vsuxei_sync", "x", [["x", "v", "0Pe(Log2EEW:6)Uvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsuxei32_sync_v", TypeRange = "f", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+          // Builtin: (mask, ptr, index, value, vl). Intrinsic: (value, ptr, index, mask, vl)
+          std::swap(Ops[0], Ops[3]);
+        } else {
+          // Builtin: (ptr, index, value, vl). Intrinsic: (value, ptr, index, vl)
+          std::rotate(Ops.begin(), Ops.begin() + 2, Ops.begin() + 3);
+        }
+        if (IsMasked)
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[4]->getType()};
+        else
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[3]->getType()};
+      }] in
+defm vsuxei32_sync_v : RVVOutOp1BuiltinSet<"vsuxei_sync", "f", [["x", "v", "0Pe(Log2EEW:5)Uvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsuxei64_sync_v", TypeRange = "f", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+          // Builtin: (mask, ptr, index, value, vl). Intrinsic: (value, ptr, index, mask, vl)
+          std::swap(Ops[0], Ops[3]);
+        } else {
+          // Builtin: (ptr, index, value, vl). Intrinsic: (value, ptr, index, vl)
+          std::rotate(Ops.begin(), Ops.begin() + 2, Ops.begin() + 3);
+        }
+        if (IsMasked)
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[4]->getType()};
+        else
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[3]->getType()};
+      }] in
+defm vsuxei64_sync_v : RVVOutOp1BuiltinSet<"vsuxei_sync", "f", [["x", "v", "0Pe(Log2EEW:6)Uvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsuxei32_sync_v", TypeRange = "y", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+          // Builtin: (mask, ptr, index, value, vl). Intrinsic: (value, ptr, index, mask, vl)
+          std::swap(Ops[0], Ops[3]);
+        } else {
+          // Builtin: (ptr, index, value, vl). Intrinsic: (value, ptr, index, vl)
+          std::rotate(Ops.begin(), Ops.begin() + 2, Ops.begin() + 3);
+        }
+        if (IsMasked)
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[4]->getType()};
+        else
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[3]->getType()};
+      }] in
+defm vsuxei32_sync_v : RVVOutOp1BuiltinSet<"vsuxei_sync", "y", [["x", "v", "0Pe(Log2EEW:5)Uvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vsuxei64_sync_v", TypeRange = "y", HasMaskedOffOperand = false, MaskedPolicyScheme = NonePolicy, ManualCodegen = [{
+        if (IsMasked) {
+          // Builtin: (mask, ptr, index, value, vl). Intrinsic: (value, ptr, index, mask, vl)
+          std::swap(Ops[0], Ops[3]);
+        } else {
+          // Builtin: (ptr, index, value, vl). Intrinsic: (value, ptr, index, vl)
+          std::rotate(Ops.begin(), Ops.begin() + 2, Ops.begin() + 3);
+        }
+        if (IsMasked)
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[4]->getType()};
+        else
+          IntrinsicTypes = {Ops[0]->getType(), Ops[1]->getType(), Ops[2]->getType(), Ops[3]->getType()};
+      }] in
+defm vsuxei64_sync_v : RVVOutOp1BuiltinSet<"vsuxei_sync", "y", [["x", "v", "0Pe(Log2EEW:6)Uvv"]]>;
+let RequiredFeatures = ["xtsm82s"], Name = "vfwcvtbf16_f_x_v", OverloadedName = "vfwcvtbf16_f", TypeRange = "c", Log2LMUL = [-3, -2, -1, 0, 1, 2], UnMaskedPolicyScheme = HasPassthruOperand, IntrinsicTypes = [-1, 0] in
+def vfwcvtbf16_f_x_v : RVVConvBuiltin<"Yw", "YwIv", "c", "vfwcvtbf16_f">;
+let HasBuiltinAlias = false, HasVL = false, HasMasked = false,
+    MaskedPolicyScheme = NonePolicy, Log2LMUL = [0],
+    ManualCodegen = [{IntrinsicTypes = {ResultType};}],
+    RequiredFeatures = ["xtsm82s"] in {
+  def vsetvli_bf : RVVBuiltin<"", "zzKzKzKz", "i">;
+  def vsetvlimax_bf : RVVBuiltin<"", "zKzKzKz", "i">;
 }

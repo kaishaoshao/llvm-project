@@ -202,6 +202,9 @@ void RVVType::initBuiltinStr() {
   case ScalarTypeKind::BFloat:
     BuiltinStr += "y";
     break;
+  case ScalarTypeKind::S128:
+    BuiltinStr = "i128";
+    break;
   default:
     llvm_unreachable("ScalarType is invalid!");
   }
@@ -240,6 +243,7 @@ void RVVType::initClangBuiltinStr() {
   case ScalarTypeKind::BFloat:
     ClangBuiltinStr += "bfloat";
     break;
+  case ScalarTypeKind::S128:
   case ScalarTypeKind::SignedInteger:
     ClangBuiltinStr += "int";
     break;
@@ -268,6 +272,9 @@ void RVVType::initTypeStr() {
   };
 
   switch (ScalarType) {
+  case ScalarTypeKind::S128:
+    Str = "i128_t";
+    return;
   case ScalarTypeKind::Void:
     Str = "void";
     return;
@@ -453,6 +460,9 @@ PrototypeDescriptor::parsePrototypeDescriptor(
     break;
   case 'f':
     PT = BaseTypeModifier::Float32;
+    break;
+  case 'r':
+    PT = BaseTypeModifier::S128;
     break;
   default:
     llvm_unreachable("Illegal primitive type transformers!");
@@ -657,6 +667,9 @@ PrototypeDescriptor::parsePrototypeDescriptor(
     case 'S':
       TM |= TypeModifier::LMUL1;
       break;
+    case 'Y':
+      TM |= TypeModifier::BFloat;
+      break;
     default:
       llvm_unreachable("Illegal non-primitive type transformer!");
     }
@@ -693,6 +706,10 @@ void RVVType::applyModifier(const PrototypeDescriptor &Transformer) {
   case BaseTypeModifier::Float32:
     ElementBitwidth = 32;
     ScalarType = ScalarTypeKind::Float;
+    break;
+  case BaseTypeModifier::S128:
+    ElementBitwidth = 128;
+    ScalarType = ScalarTypeKind::S128;
     break;
   case BaseTypeModifier::Invalid:
     ScalarType = ScalarTypeKind::Invalid;
@@ -1174,7 +1191,7 @@ void RVVIntrinsic::updateNamesAndPolicy(
 
 SmallVector<PrototypeDescriptor> parsePrototypes(StringRef Prototypes) {
   SmallVector<PrototypeDescriptor> PrototypeDescriptors;
-  const StringRef Primaries("evwqom0ztulf");
+  const StringRef Primaries("evwqom0ztulfr");
   while (!Prototypes.empty()) {
     size_t Idx = 0;
     // Skip over complex prototype because it could contain primitive type
