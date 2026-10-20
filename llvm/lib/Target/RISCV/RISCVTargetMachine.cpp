@@ -241,6 +241,22 @@ RISCVTargetMachine::getSubtargetImpl(const Function &F) const {
       RVVBitsMax = *VScaleMax * RISCV::RVVBitsPerBlock;
   }
 
+  // Vendor fork: the RAISA (SIMT) device target has a fixed vector length of
+  // 128 lanes of 32 bits = 4096 bits.  Making the minimum and maximum equal
+  // makes RISCVSubtarget::getRealVLen() exact, which is what lets
+  // RISCVVectorPeephole::convertToVLMAX() turn an AVL equal to VLMAX (128 for
+  // e32/m1 and for e16/mf2) into the VLMAX sentinel.  The vendor's MIR for
+  // mathdev_raisa_fadd_rn_f carries `-1` in the VL slot of its vle/vfadd/vse
+  // pseudos where this reconstruction materialises `ADDI $x0, 128`; with the
+  // sentinel in place the vsetvli pass picks the PseudoVSETVLIX0 (AVL = $x0)
+  // form the vendor uses.  This overrides -riscv-v-vector-bits-min/max, as the
+  // vendor does too (forcing those options to 1024/1024 on the vendor binary
+  // still produces the sentinel conversion).
+  if (TargetTriple.getOS() == Triple::RAISA) {
+    RVVBitsMin = 4096;
+    RVVBitsMax = 4096;
+  }
+
   if (RVVBitsMin != -1U) {
     // FIXME: Change to >= 32 when VLEN = 32 is supported.
     assert((RVVBitsMin == 0 || (RVVBitsMin >= 64 && RVVBitsMin <= 65536 &&
