@@ -151,14 +151,14 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   initializeRISCVVectorPeepholePass(*PR);
   initializeRISCVVLOptimizerPass(*PR);
   initializeTX8InsertXFRMPass(*PR);
-  // wt-exec line: the vendor runs `legalize-exec` after `riscv-copyelim`, i.e.
-  // in addPostRegAlloc() below.
-  initializeTX8LegalizeEXECPass(*PR);
   initializeTX8OptimizeConfigInstrsPass(*PR);
   initializeTX8AnnotateControlFlowLegacyPass(*PR);
   initializeTX8TransformSIMTToSIMDPass(*PR);
   initializeTX8BankAwareSharedLegacyPass(*PR);
   initializeTX8LowerSharedLegacyPass(*PR);
+  // wt-exec line: the vendor runs `legalize-exec` after `riscv-copyelim`, i.e.
+  // in addPostRegAlloc() below.
+  initializeTX8LegalizeEXECPass(*PR);
   initializeRISCVVMV0EliminationPass(*PR);
   initializeRISCVInsertVSETVLIPass(*PR);
   initializeRISCVInsertReadWriteCSRPass(*PR);
@@ -181,13 +181,6 @@ static StringRef computeDataLayout(const Triple &TT,
   if (TT.isArch64Bit()) {
     if (ABIName == "lp64e")
       return "e-m:e-p:64:64-i64:64-i128:128-n32:64-S64";
-
-    // RAISA device targets: the fork's RPU layout (32-bit GEP index, 32-bit
-    // pointers in AS3/AS4, allocas in AS5).  Must match
-    // clang/lib/Basic/Targets/RISCV.h exactly.
-    if (TT.isRaisa())
-      return "e-m:e-p:64:64:64:32-p3:32:32:32:32-p4:32:32:32:32-"
-             "i64:64-i128:128-n32:64-S128-A5";
 
     // RAISA device targets: the fork's RPU layout (32-bit GEP index, 32-bit
     // pointers in AS3/AS4, allocas in AS5).  Must match
