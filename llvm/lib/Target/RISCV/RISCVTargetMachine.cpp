@@ -164,6 +164,13 @@ static StringRef computeDataLayout(const Triple &TT,
     if (ABIName == "lp64e")
       return "e-m:e-p:64:64-i64:64-i128:128-n32:64-S64";
 
+    // RAISA device targets: the fork's RPU layout (32-bit GEP index, 32-bit
+    // pointers in AS3/AS4, allocas in AS5).  Must match
+    // clang/lib/Basic/Targets/RISCV.h exactly.
+    if (TT.isRaisa())
+      return "e-m:e-p:64:64:64:32-p3:32:32:32:32-p4:32:32:32:32-"
+             "i64:64-i128:128-n32:64-S128-A5";
+
     return "e-m:e-p:64:64-i64:64-i128:128-n32:64-S128";
   }
   assert(TT.isArch32Bit() && "only RV32 and RV64 are currently supported");

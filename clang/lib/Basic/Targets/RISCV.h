@@ -244,7 +244,18 @@ public:
       : RISCVTargetInfo(Triple, Opts) {
     LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
     IntMaxType = Int64Type = SignedLong;
-    resetDataLayout("e-m:e-p:64:64-i64:64-i128:128-n32:64-S128");
+    // RAISA device targets use the fork's RPU data layout, byte-identical to
+    // the vendor's `target datalayout` in `-x raisa` device IR
+    // (wt-raisa-be/recon/simt2simd/*.before.ir): 32-bit GEP index,
+    // 32-bit pointers in address spaces 3/4 (L0A/L0W shared) and allocas in
+    // address space 5.  Only the RAISA OS triple is affected; plain
+    // riscv64-{linux,unknown}-* keeps the upstream layout.
+    if (getTriple().isRaisa())
+      resetDataLayout(
+          "e-m:e-p:64:64:64:32-p3:32:32:32:32-p4:32:32:32:32-"
+          "i64:64-i128:128-n32:64-S128-A5");
+    else
+      resetDataLayout("e-m:e-p:64:64-i64:64-i128:128-n32:64-S128");
   }
 
   bool setABI(const std::string &Name) override {

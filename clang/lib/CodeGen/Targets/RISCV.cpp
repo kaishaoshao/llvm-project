@@ -798,6 +798,18 @@ public:
 
     auto *Fn = cast<llvm::Function>(GV);
 
+#ifdef __TSM_RISCV__
+    // RAISA device kernels carry the fork's RPU_KERNEL calling convention,
+    // which the IR printer spells `rpu_kernel` -- the vendor's device IR is
+    // `define dso_local rpu_kernel void @...`.  `__attribute__((global))` maps
+    // onto CUDAGlobalAttr (Attr.td gives CUDA{Device,Global,Shared}
+    // LangOpts = [CUDA, RAISA]) so this mirrors what NVPTXTargetCodeGenInfo
+    // does for CUDA kernels.  Gated on the RAISA OS triple, so the host half of
+    // an offload compile (`-x raisa` with an x86_64 triple) keeps CC_C.
+    if (FD->hasAttr<CUDAGlobalAttr>() && CGM.getTarget().getTriple().isRaisa())
+      Fn->setCallingConv(llvm::CallingConv::RPU_KERNEL);
+#endif
+
     if (CGM.getCodeGenOpts().CFProtectionReturn)
       Fn->addFnAttr("hw-shadow-stack");
 

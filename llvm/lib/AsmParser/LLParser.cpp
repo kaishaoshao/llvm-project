@@ -2236,6 +2236,9 @@ bool LLParser::parseOptionalCallingConv(unsigned &CC) {
   case lltok::kw_avr_intrcc:     CC = CallingConv::AVR_INTR; break;
   case lltok::kw_avr_signalcc:   CC = CallingConv::AVR_SIGNAL; break;
   case lltok::kw_ptx_kernel:     CC = CallingConv::PTX_Kernel; break;
+#ifdef __TSM_RISCV__
+  case lltok::kw_rpu_kernel:     CC = CallingConv::RPU_KERNEL; break;
+#endif
   case lltok::kw_ptx_device:     CC = CallingConv::PTX_Device; break;
   case lltok::kw_spir_kernel:    CC = CallingConv::SPIR_KERNEL; break;
   case lltok::kw_spir_func:      CC = CallingConv::SPIR_FUNC; break;
