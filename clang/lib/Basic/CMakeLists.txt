@@ -82,6 +82,7 @@ add_clang_library(clangBasic
   OperatorPrecedence.cpp
   ParsedAttrInfo.cpp
   ProfileList.cpp
+  Raisa.cpp
   NoSanitizeList.cpp
   SanitizerSpecialCaseList.cpp
   Sanitizers.cpp

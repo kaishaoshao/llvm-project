@@ -110,6 +110,7 @@ enum TokenKey : unsigned {
   KEYNOZOS = 0x4000000,
   KEYHLSL = 0x8000000,
   KEYFIXEDPOINT = 0x10000000,
+  KEYRAISA = 0x20000000,
   KEYMAX = KEYFIXEDPOINT, // The maximum key
   KEYALLCXX = KEYCXX | KEYCXX11 | KEYCXX20,
   KEYALL = (KEYMAX | (KEYMAX - 1)) & ~KEYNOMS18 & ~KEYNOOPENCL &
@@ -200,6 +201,8 @@ static KeywordStatus getKeywordStatusHelper(const LangOptions &LangOpts,
     return LangOpts.isSYCL() ? KS_Enabled : KS_Unknown;
   case KEYCUDA:
     return LangOpts.CUDA ? KS_Enabled : KS_Unknown;
+  case KEYRAISA:
+    return LangOpts.RAISA ? KS_Enabled : KS_Unknown;
   case KEYZOS:
     return LangOpts.ZOSExt ? KS_Enabled : KS_Unknown;
   case KEYHLSL:
