@@ -123,6 +123,15 @@ private:
                                                   StringRef FS,
                                                   StringRef ABIName);
 
+#ifdef __TSM_RISCV__
+  /// Vendor fork (TX8 / tsm-x82): `tsm-x82` codegen is scheduled with the
+  /// Andes-45-series model by default; the TX82 model is only selected when the
+  /// vendor TX8 scheduling strategy (`-riscv-tx8-sched`) is enabled.
+  /// Reconstructed from libLLVMRISCVCodeGen.a(RISCVSubtarget.cpp.o) -- see
+  /// wt-raisa-c/logs/SCHED_FINDINGS.md.
+  const MCSchedModel &getSchedModelForCPU(StringRef CPU) const override;
+#endif
+
 public:
   // Initializes the data members to match that of the specified triple.
   RISCVSubtarget(const Triple &TT, StringRef CPU, StringRef TuneCPU,
