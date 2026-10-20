@@ -2309,6 +2309,8 @@ include "RISCVInstrInfoXMips.td"
 include "RISCVInstrInfoXRivos.td"
 include "RISCVInstrInfoXAndes.td"
 include "RISCVInstrInfoXTsm82s.td"
+// ISel lowering for the XTsm82s intrinsics (see that file's header).
+include "RISCVInstrInfoXTsm82ISel.td"
 
 //===----------------------------------------------------------------------===//
 // Global ISel

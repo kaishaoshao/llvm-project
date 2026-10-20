@@ -89,52 +89,67 @@ def XTsm_ANDN_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "andn.ss",
   let Inst{24-20} = vs2;
 }
 
-def XTsm_CONV : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "conv", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_CONV : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "conv", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0110011;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_CONV_PSUM : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "conv_psum", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_CONV_PSUM : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "conv_psum", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0110111;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_CONVBW : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "convbw", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_CONVBW : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "convbw", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0111011;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_CONVBW_PSUM : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "convbw_psum", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_CONVBW_PSUM : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "convbw_psum", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0111111;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_DIRECT_WRITE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "direct_write", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_DIRECT_WRITE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "direct_write", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1110101;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_DTE_GATHER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dte_gather", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_DTE_GATHER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "dte_gather", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1000000;
@@ -146,7 +161,7 @@ def XTsm_DTE_GATHER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dte
   let hasSideEffects = 1;
 }
 
-def XTsm_DTE_GATHER_SCATTER_G2L : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dte_gather_scatter_g2l", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_DTE_GATHER_SCATTER_G2L : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "dte_gather_scatter_g2l", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1010000;
@@ -158,7 +173,7 @@ def XTsm_DTE_GATHER_SCATTER_G2L : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR
   let hasSideEffects = 1;
 }
 
-def XTsm_DTE_GATHER_SCATTER_L2G : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dte_gather_scatter_l2g", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_DTE_GATHER_SCATTER_L2G : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "dte_gather_scatter_l2g", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1011000;
@@ -170,7 +185,7 @@ def XTsm_DTE_GATHER_SCATTER_L2G : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR
   let hasSideEffects = 1;
 }
 
-def XTsm_DTE_INDEX_GATHER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dte_index_gather", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_DTE_INDEX_GATHER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "dte_index_gather", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1100000;
@@ -182,7 +197,7 @@ def XTsm_DTE_INDEX_GATHER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1)
   let hasSideEffects = 1;
 }
 
-def XTsm_DTE_INDEX_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dte_index_scatter", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_DTE_INDEX_SCATTER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "dte_index_scatter", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1101000;
@@ -194,7 +209,7 @@ def XTsm_DTE_INDEX_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1
   let hasSideEffects = 1;
 }
 
-def XTsm_DTE_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dte_scatter", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_DTE_SCATTER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "dte_scatter", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1001000;
@@ -206,7 +221,7 @@ def XTsm_DTE_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dt
   let hasSideEffects = 1;
 }
 
-def XTsm_DTE_SET_LENGTH : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dte_set_length", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_DTE_SET_LENGTH : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "dte_set_length", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0110000;
@@ -218,7 +233,7 @@ def XTsm_DTE_SET_LENGTH : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), 
   let hasSideEffects = 1;
 }
 
-def XTsm_DTE_SET_RDMA_DST_ITERA_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dte_set_rdma_dst_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_DTE_SET_RDMA_DST_ITERA_STRIDE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "dte_set_rdma_dst_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0010000;
@@ -230,7 +245,7 @@ def XTsm_DTE_SET_RDMA_DST_ITERA_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$r
   let hasSideEffects = 1;
 }
 
-def XTsm_DTE_SET_RDMA_MISC : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dte_set_rdma_misc", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_DTE_SET_RDMA_MISC : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "dte_set_rdma_misc", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0000000;
@@ -242,7 +257,7 @@ def XTsm_DTE_SET_RDMA_MISC : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1
   let hasSideEffects = 1;
 }
 
-def XTsm_DTE_SET_RDMA_SRC_ITERA_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dte_set_rdma_src_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_DTE_SET_RDMA_SRC_ITERA_STRIDE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "dte_set_rdma_src_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0001000;
@@ -254,7 +269,7 @@ def XTsm_DTE_SET_RDMA_SRC_ITERA_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$r
   let hasSideEffects = 1;
 }
 
-def XTsm_DTE_SET_WDMA_DST_ITERA_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dte_set_wdma_dst_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_DTE_SET_WDMA_DST_ITERA_STRIDE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "dte_set_wdma_dst_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0101000;
@@ -266,7 +281,7 @@ def XTsm_DTE_SET_WDMA_DST_ITERA_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$r
   let hasSideEffects = 1;
 }
 
-def XTsm_DTE_SET_WDMA_MISC : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dte_set_wdma_misc", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_DTE_SET_WDMA_MISC : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "dte_set_wdma_misc", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0011000;
@@ -278,7 +293,7 @@ def XTsm_DTE_SET_WDMA_MISC : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1
   let hasSideEffects = 1;
 }
 
-def XTsm_DTE_SET_WDMA_SRC_ITERA_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "dte_set_wdma_src_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_DTE_SET_WDMA_SRC_ITERA_STRIDE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "dte_set_wdma_src_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0100000;
@@ -290,31 +305,40 @@ def XTsm_DTE_SET_WDMA_SRC_ITERA_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$r
   let hasSideEffects = 1;
 }
 
-def XTsm_GEMM : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "gemm", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_GEMM : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "gemm", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0100011;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_GEMM_PSUM : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "gemm_psum", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_GEMM_PSUM : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "gemm_psum", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0100111;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_INST_BARRIER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "inst_barrier", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_INST_BARRIER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "inst_barrier", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0001001;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
 def XTsm_ISETEXEC : XTsm82sInst<(outs), (ins SR:$vs2), "isetexec", "$vs2", [HasVendorXTsm82s]> {
@@ -337,6 +361,9 @@ def XTsm_KCORE_NCC_READ : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2), "kcore_ncc
   let Inst{31-25} = 0b0100001;
   let Inst{11-7} = rd;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
 def XTsm_KCORE_WAIT : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2), "kcore_wait", "$rd, $rs2", [HasVendorXTsm82s]> {
@@ -345,9 +372,12 @@ def XTsm_KCORE_WAIT : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2), "kcore_wait", 
   let Inst{31-25} = 0b0100101;
   let Inst{11-7} = rd;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_L0_FLUSH : XTsm82sInst<(outs GPR:$rd), (ins XTsmUImm5:$imm, GPR:$rs1), "l0_flush", "$rd, $imm, $rs1", [HasVendorXTsm82s]> {
+def XTsm_L0_FLUSH : XTsm82sInst<(outs), (ins GPR:$rd, XTsmUImm5:$imm, GPR:$rs1), "l0_flush", "$rd, $imm, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b110;
   let Inst{31-25} = 0b0001000;
@@ -359,7 +389,7 @@ def XTsm_L0_FLUSH : XTsm82sInst<(outs GPR:$rd), (ins XTsmUImm5:$imm, GPR:$rs1), 
   let hasSideEffects = 1;
 }
 
-def XTsm_L0_INVALID : XTsm82sInst<(outs GPR:$rd), (ins XTsmUImm5:$imm, GPR:$rs1), "l0_invalid", "$rd, $imm, $rs1", [HasVendorXTsm82s]> {
+def XTsm_L0_INVALID : XTsm82sInst<(outs), (ins GPR:$rd, XTsmUImm5:$imm, GPR:$rs1), "l0_invalid", "$rd, $imm, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b110;
   let Inst{31-25} = 0b0000000;
@@ -371,7 +401,7 @@ def XTsm_L0_INVALID : XTsm82sInst<(outs GPR:$rd), (ins XTsmUImm5:$imm, GPR:$rs1)
   let hasSideEffects = 1;
 }
 
-def XTsm_L0_SET_SRC_ITERA : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "l0_set_src_itera", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_L0_SET_SRC_ITERA : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "l0_set_src_itera", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b110;
   let Inst{31-25} = 0b0110000;
@@ -383,7 +413,7 @@ def XTsm_L0_SET_SRC_ITERA : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1)
   let hasSideEffects = 1;
 }
 
-def XTsm_L0_SET_SRC_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "l0_set_src_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_L0_SET_SRC_STRIDE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "l0_set_src_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b110;
   let Inst{31-25} = 0b0101000;
@@ -395,7 +425,7 @@ def XTsm_L0_SET_SRC_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1
   let hasSideEffects = 1;
 }
 
-def XTsm_L1_FLUSH : XTsm82sInst<(outs GPR:$rd), (ins XTsmUImm5:$imm, GPR:$rs1), "l1_flush", "$rd, $imm, $rs1", [HasVendorXTsm82s]> {
+def XTsm_L1_FLUSH : XTsm82sInst<(outs), (ins GPR:$rd, XTsmUImm5:$imm, GPR:$rs1), "l1_flush", "$rd, $imm, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b110;
   let Inst{31-25} = 0b1001000;
@@ -407,7 +437,7 @@ def XTsm_L1_FLUSH : XTsm82sInst<(outs GPR:$rd), (ins XTsmUImm5:$imm, GPR:$rs1), 
   let hasSideEffects = 1;
 }
 
-def XTsm_L1_INVALID : XTsm82sInst<(outs GPR:$rd), (ins XTsmUImm5:$imm, GPR:$rs1), "l1_invalid", "$rd, $imm, $rs1", [HasVendorXTsm82s]> {
+def XTsm_L1_INVALID : XTsm82sInst<(outs), (ins GPR:$rd, XTsmUImm5:$imm, GPR:$rs1), "l1_invalid", "$rd, $imm, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b110;
   let Inst{31-25} = 0b1000000;
@@ -419,7 +449,7 @@ def XTsm_L1_INVALID : XTsm82sInst<(outs GPR:$rd), (ins XTsmUImm5:$imm, GPR:$rs1)
   let hasSideEffects = 1;
 }
 
-def XTsm_L1_SET_SRC_ITERA : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "l1_set_src_itera", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_L1_SET_SRC_ITERA : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "l1_set_src_itera", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b110;
   let Inst{31-25} = 0b1110000;
@@ -431,7 +461,7 @@ def XTsm_L1_SET_SRC_ITERA : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1)
   let hasSideEffects = 1;
 }
 
-def XTsm_L1_SET_SRC_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "l1_set_src_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_L1_SET_SRC_STRIDE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "l1_set_src_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b110;
   let Inst{31-25} = 0b1101000;
@@ -443,7 +473,7 @@ def XTsm_L1_SET_SRC_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1
   let hasSideEffects = 1;
 }
 
-def XTsm_L1_SW_PREFETCH : XTsm82sInst<(outs GPR:$rd), (ins XTsmUImm5:$imm, GPR:$rs1), "l1_sw_prefetch", "$rd, $imm, $rs1", [HasVendorXTsm82s]> {
+def XTsm_L1_SW_PREFETCH : XTsm82sInst<(outs), (ins GPR:$rd, XTsmUImm5:$imm, GPR:$rs1), "l1_sw_prefetch", "$rd, $imm, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b110;
   let Inst{31-25} = 0b1010000;
@@ -466,7 +496,7 @@ def XTsm_LSU_RDMA_CHANNEL_NORM : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "ls
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_RDMA_GATHER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_rdma_gather", "$rd, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_RDMA_GATHER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs1), "lsu_rdma_gather", "$rd, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-20} = 0b000001000000;
@@ -477,7 +507,7 @@ def XTsm_LSU_RDMA_GATHER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_rdma
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_RDMA_GATHER_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_rdma_gather_scatter", "$rd, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_RDMA_GATHER_SCATTER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs1), "lsu_rdma_gather_scatter", "$rd, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-20} = 0b010001000000;
@@ -488,7 +518,7 @@ def XTsm_LSU_RDMA_GATHER_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_RDMA_INDEX_GATHER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "lsu_rdma_index_gather", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_RDMA_INDEX_GATHER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "lsu_rdma_index_gather", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0001010;
@@ -500,7 +530,7 @@ def XTsm_LSU_RDMA_INDEX_GATHER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_RDMA_MEM_COPY : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_rdma_mem_copy", "$rd, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_RDMA_MEM_COPY : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs1), "lsu_rdma_mem_copy", "$rd, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-20} = 0b110001000000;
@@ -511,7 +541,7 @@ def XTsm_LSU_RDMA_MEM_COPY : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_rd
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_RDMA_MEM_SET : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_rdma_mem_set", "$rd, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_RDMA_MEM_SET : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs1), "lsu_rdma_mem_set", "$rd, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-20} = 0b100001000000;
@@ -533,7 +563,7 @@ def XTsm_LSU_RDMA_MEM_SET_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), 
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_RDMA_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_rdma_scatter", "$rd, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_RDMA_SCATTER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs1), "lsu_rdma_scatter", "$rd, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-20} = 0b001001000000;
@@ -544,103 +574,95 @@ def XTsm_LSU_RDMA_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_rdm
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_SET_LENGTH : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "lsu_set_length", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_SET_LENGTH : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "lsu_set_length", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1000110;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
-  let mayLoad = 1;
   let mayStore = 1;
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_SET_RDMA_DST_ITERA_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "lsu_set_rdma_dst_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_SET_RDMA_DST_ITERA_STRIDE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "lsu_set_rdma_dst_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0001110;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
-  let mayLoad = 1;
   let mayStore = 1;
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_SET_RDMA_HWC : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "lsu_set_rdma_hwc", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_SET_RDMA_HWC : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "lsu_set_rdma_hwc", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0010110;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
-  let mayLoad = 1;
   let mayStore = 1;
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_SET_RDMA_SRC_ITERA_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "lsu_set_rdma_src_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_SET_RDMA_SRC_ITERA_STRIDE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "lsu_set_rdma_src_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0000110;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
-  let mayLoad = 1;
   let mayStore = 1;
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_SET_TDMA_HWC : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "lsu_set_tdma_hwc", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_SET_TDMA_HWC : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "lsu_set_tdma_hwc", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0110110;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
-  let mayLoad = 1;
   let mayStore = 1;
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_SET_WDMA_DST_ITERA_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "lsu_set_wdma_dst_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_SET_WDMA_DST_ITERA_STRIDE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "lsu_set_wdma_dst_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0100110;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
-  let mayLoad = 1;
   let mayStore = 1;
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_SET_WDMA_HWC : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "lsu_set_wdma_hwc", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_SET_WDMA_HWC : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "lsu_set_wdma_hwc", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0101110;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
-  let mayLoad = 1;
   let mayStore = 1;
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_SET_WDMA_SRC_ITERA_STRIDE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "lsu_set_wdma_src_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_SET_WDMA_SRC_ITERA_STRIDE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "lsu_set_wdma_src_itera_stride", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0011110;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
-  let mayLoad = 1;
   let mayStore = 1;
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_TDMA_BANK_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_tdma_bank_scatter", "$rd, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_TDMA_BANK_SCATTER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs1), "lsu_tdma_bank_scatter", "$rd, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-20} = 0b001001000010;
@@ -651,7 +673,7 @@ def XTsm_LSU_TDMA_BANK_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "ls
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_TDMA_MEM_COPY : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_tdma_mem_copy", "$rd, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_TDMA_MEM_COPY : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs1), "lsu_tdma_mem_copy", "$rd, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-20} = 0b000001000010;
@@ -662,7 +684,7 @@ def XTsm_LSU_TDMA_MEM_COPY : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_td
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_TDMA_NCHW2NHWC : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_tdma_nchw2nhwc", "$rd, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_TDMA_NCHW2NHWC : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs1), "lsu_tdma_nchw2nhwc", "$rd, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-20} = 0b110001000001;
@@ -673,7 +695,7 @@ def XTsm_LSU_TDMA_NCHW2NHWC : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_t
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_TDMA_NHWC2NCHW : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_tdma_nhwc2nchw", "$rd, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_TDMA_NHWC2NCHW : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs1), "lsu_tdma_nhwc2nchw", "$rd, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-20} = 0b111001000001;
@@ -695,7 +717,7 @@ def XTsm_LSU_WDMA_CHANNEL_NORM : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "ls
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_WDMA_GATHER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_wdma_gather", "$rd, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_WDMA_GATHER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs1), "lsu_wdma_gather", "$rd, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-20} = 0b111001000000;
@@ -706,7 +728,7 @@ def XTsm_LSU_WDMA_GATHER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_wdma
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_WDMA_GATHER_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_wdma_gather_scatter", "$rd, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_WDMA_GATHER_SCATTER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs1), "lsu_wdma_gather_scatter", "$rd, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-20} = 0b001001000001;
@@ -717,7 +739,7 @@ def XTsm_LSU_WDMA_GATHER_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_WDMA_INDEX_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "lsu_wdma_index_scatter", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_WDMA_INDEX_SCATTER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "lsu_wdma_index_scatter", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0011010;
@@ -729,7 +751,7 @@ def XTsm_LSU_WDMA_INDEX_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_WDMA_MEM_COPY : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_wdma_mem_copy", "$rd, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_WDMA_MEM_COPY : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs1), "lsu_wdma_mem_copy", "$rd, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-20} = 0b101001000001;
@@ -740,7 +762,7 @@ def XTsm_LSU_WDMA_MEM_COPY : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_wd
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_WDMA_MEM_SET : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_wdma_mem_set", "$rd, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_WDMA_MEM_SET : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs1), "lsu_wdma_mem_set", "$rd, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-20} = 0b011001000001;
@@ -762,7 +784,7 @@ def XTsm_LSU_WDMA_MEM_SET_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), 
   let hasSideEffects = 1;
 }
 
-def XTsm_LSU_WDMA_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_wdma_scatter", "$rd, $rs1", [HasVendorXTsm82s]> {
+def XTsm_LSU_WDMA_SCATTER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs1), "lsu_wdma_scatter", "$rd, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-20} = 0b000001000001;
@@ -773,40 +795,52 @@ def XTsm_LSU_WDMA_SCATTER : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs1), "lsu_wdm
   let hasSideEffects = 1;
 }
 
-def XTsm_MMA : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "mma", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_MMA : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "mma", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1010011;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_MMA_FIRST : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "mma_first", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_MMA_FIRST : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "mma_first", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1001011;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_MMA_FIRST_PSUM : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "mma_first_psum", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_MMA_FIRST_PSUM : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "mma_first_psum", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1001111;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_MMA_LAST : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "mma_last", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_MMA_LAST : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "mma_last", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1010111;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
 def XTsm_MOVEXECZ : XTsm82sInst<(outs GPR:$rd), (ins), "movexecz", "$rd", [HasVendorXTsm82s]> {
@@ -853,67 +887,74 @@ def XTsm_NAND_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "nand.ss",
   let Inst{24-20} = vs2;
 }
 
-def XTsm_NE_SET_CONV_PAD : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "ne_set_conv_pad", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_NE_SET_CONV_PAD : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "ne_set_conv_pad", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0010111;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayStore = 1;
 }
 
-def XTsm_NE_SET_CONV_SWR : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "ne_set_conv_swr", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_NE_SET_CONV_SWR : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "ne_set_conv_swr", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0011011;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayStore = 1;
 }
 
-def XTsm_NE_SET_H_OH_OW : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "ne_set_h_oh_ow", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_NE_SET_H_OH_OW : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "ne_set_h_oh_ow", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0010011;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayStore = 1;
 }
 
-def XTsm_NE_SET_LENGTH : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "ne_set_length", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_NE_SET_LENGTH : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "ne_set_length", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0011111;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayStore = 1;
 }
 
-def XTsm_NE_SET_MISC : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "ne_set_misc", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_NE_SET_MISC : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "ne_set_misc", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0000111;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayStore = 1;
 }
 
-def XTsm_NE_SET_MKN : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "ne_set_mkn", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_NE_SET_MKN : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "ne_set_mkn", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0001111;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayStore = 1;
 }
 
-def XTsm_NE_SET_PREC : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "ne_set_prec", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_NE_SET_PREC : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "ne_set_prec", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0000011;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayStore = 1;
 }
 
 def XTsm_NOR_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "nor.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
@@ -946,55 +987,71 @@ def XTsm_ORN_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "orn.ss", "
   let Inst{24-20} = vs2;
 }
 
-def XTsm_RECV : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "recv", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_RECV : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "recv", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1101101;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_RECV_ROCE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "recv_roce", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_RECV_ROCE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "recv_roce", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0011001;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_SEND : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "send", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_SEND : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "send", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1100101;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_SEND_ROCE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "send_roce", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_SEND_ROCE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "send_roce", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0010001;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_SEND_SYNC : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "send_sync", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_SEND_SYNC : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "send_sync", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0000001;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
 def XTsm_SET_MEM_ALLOC : XTsm82sInst<(outs), (ins GPR:$rs2), "set_mem_alloc", "$rs2", [HasVendorXTsm82s]> {
   let Inst{19-0} = 0b00000111000001111011;
   let Inst{31-25} = 0b1011100;
   let Inst{24-20} = rs2;
+  let hasSideEffects = 1;
 }
 
 def XTsm_SORT_AUTO_IDX : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "sort_auto_idx", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
@@ -3622,8 +3679,6 @@ def XTsm_VSET2DVLOAD0 : XTsm82sInst<(outs), (ins GPR:$rs2, GPR:$rs1), "vset2dvlo
   let Inst{31-25} = 0b1010000;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
-  let mayLoad = 1;
-  let mayStore = 1;
   let hasSideEffects = 1;
 }
 
@@ -3632,8 +3687,6 @@ def XTsm_VSET2DVLOAD1 : XTsm82sInst<(outs), (ins GPR:$rs2, GPR:$rs1), "vset2dvlo
   let Inst{31-25} = 0b1010001;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
-  let mayLoad = 1;
-  let mayStore = 1;
   let hasSideEffects = 1;
 }
 
@@ -3642,8 +3695,6 @@ def XTsm_VSET2DVSTORE0 : XTsm82sInst<(outs), (ins GPR:$rs2, GPR:$rs1), "vset2dvs
   let Inst{31-25} = 0b1010100;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
-  let mayLoad = 1;
-  let mayStore = 1;
   let hasSideEffects = 1;
 }
 
@@ -3652,13 +3703,12 @@ def XTsm_VSET2DVSTORE1 : XTsm82sInst<(outs), (ins GPR:$rs2, GPR:$rs1), "vset2dvs
   let Inst{31-25} = 0b1010101;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
-  let mayLoad = 1;
-  let mayStore = 1;
   let hasSideEffects = 1;
 }
 
 def XTsm_VSETBARRIER : XTsm82sInst<(outs), (ins), "vsetbarrier", "", [HasVendorXTsm82s]> {
   let Inst{31-0} = 0b10000010000000000111000001111011;
+  let hasSideEffects = 1;
 }
 
 def XTsm_VSETSIMT : XTsm82sInst<(outs), (ins XTsmUImm5:$imm), "vsetsimt", "$imm", [HasVendorXTsm82s]> {
@@ -4210,49 +4260,64 @@ def XTsm_VXOR_VX : XTsm82sInst<(outs VR:$vd), (ins VR:$vs2, GPR:$rs1, VMaskOp:$v
   let Inst{25} = vm;
 }
 
-def XTsm_WAIT_RECV : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "wait_recv", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_WAIT_RECV : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "wait_recv", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1110001;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_WAIT_RECV_ROCE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "wait_recv_roce", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_WAIT_RECV_ROCE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "wait_recv_roce", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0011101;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_WAIT_SEND : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "wait_send", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_WAIT_SEND : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "wait_send", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b1101001;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_WAIT_SEND_ROCE : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "wait_send_roce", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_WAIT_SEND_ROCE : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "wait_send_roce", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0010101;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
-def XTsm_WAIT_SYNC : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2, GPR:$rs1), "wait_sync", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_WAIT_SYNC : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "wait_sync", "$rd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b000;
   let Inst{31-25} = 0b0000101;
   let Inst{11-7} = rd;
   let Inst{19-15} = rs1;
   let Inst{24-20} = rs2;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let hasSideEffects = 1;
 }
 
 def XTsm_XNOR_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "xnor.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
