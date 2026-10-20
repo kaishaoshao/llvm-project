@@ -1595,6 +1595,11 @@ def SerializedDiagnostics : DiagGroup<"serialized-diagnostics">;
 // compiling CUDA C/C++ but which is not compatible with the CUDA spec.
 def CudaCompat : DiagGroup<"cuda-compat">;
 
+// A warning group for warnings about code that clang accepts when
+// compiling for the RAISA/TSM target but which is not compatible with
+// the RAISA specification.
+def RaisaCompat : DiagGroup<"raisa-compat">;
+
 // Warning about unknown CUDA SDK version.
 def CudaUnknownVersion: DiagGroup<"unknown-cuda-version">;
 

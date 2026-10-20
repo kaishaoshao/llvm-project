@@ -82,7 +82,7 @@ def err_drv_no_hipstdpar_thrust_lib : Error<
   "Acceleration library; provide it via "
   "'--hipstdpar-thrust-path'">;
 def err_drv_no_hipstdpar_prim_lib : Error<
-  "cannot find rocPrim, which is required by the HIP Standard Parallelism "
+  "cannot find rocPrim, which is rrdcequired by the HIP Standard Parallelism "
   "Acceleration library; provide it via '--hipstdpar-prim-path'">;
 
 def err_drv_no_hipspv_device_lib : Error<
@@ -874,4 +874,34 @@ def warn_drv_openacc_without_cir
     : Warning<"OpenACC directives will result in no runtime behavior; use "
               "-fclangir to enable runtime effect">,
       InGroup<SourceUsesOpenACC>;
+
+// RAISA diagnostics.
+def err_drv_no_raisa_installation : Error<
+  "cannot find RAISA installation; Provide its path via '--raisa-path', or pass "
+  "'-noraisainc' to build without RAISA includes">;
+def err_drv_no_raisa_libdevice : Error<
+  "cannot find libdevice for %0; Provide path to different RAISA installation "
+  "via '--raisa-path', or pass '-noraisalib' to build without linking with "
+  "libdevice">;
+def err_drv_offload_bad_rpu_arch : Error<
+  "unsupported %0 rpu architecture: %1">;
+def err_drv_offload_missing_rpu_arch : Error<
+  "must pass in an explicit %0 rpu architecture to '%1'">;
+def err_drv_raisa_bad_rpu_arch : Error<
+  "unsupported RAISA rpu architecture: %0">;
+def err_drv_raisa_combine_device_with_dyn_lib_output : Error<
+  "option '--raisa-combine-device' can not be used for dynamic/static library output">;
+def err_drv_raisa_host_arch : Error<
+  "unsupported architecture '%0' for host compilation">;
+def err_drv_raisa_offload_only_emit_bc : Error<
+  "RAISA offload target is supported only along with --emit-llvm">;
+def err_drv_raisa_version_unsupported : Error<
+  "RPU arch %0 is supported by RAISA versions between %1 and %2 (inclusive), "
+  "but installation at %3 is %4; Use --raisa-path to specify a different RAISA "
+  "install, pass a different RPU arch with --raisa-rpu-arch, or pass "
+  "--no-raisa-version-check">;
+def err_drv_undetermined_rpu_arch : Error<
+  "cannot determine %0 architecture: %1; consider passing it via '%2'; "
+  "environment variable CLANG_TOOLCHAIN_PROGRAM_TIMEOUT specifies the tool "
+  "timeout (integer secs, <=0 is infinite)">;
 }

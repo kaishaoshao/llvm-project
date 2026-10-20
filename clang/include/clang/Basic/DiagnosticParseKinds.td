@@ -1753,6 +1753,9 @@ def err_ptrauth_qualifier_bad_arg_count : Error<
 def warn_cuda_attr_lambda_position : Warning<
   "nvcc does not allow '__%0__' to appear after the parameter list in lambdas">,
   InGroup<CudaCompat>;
+def warn_raisa_attr_lambda_position : Warning<
+  "txcc does not allow '__%0__' to appear after parameter list in lambdas">,
+  InGroup<RaisaCompat>;
 def warn_pragma_force_cuda_host_device_bad_arg : Warning<
   "incorrect use of #pragma clang force_cuda_host_device begin|end">,
   InGroup<IgnoredPragmas>;

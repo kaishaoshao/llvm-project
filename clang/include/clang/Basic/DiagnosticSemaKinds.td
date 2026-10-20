@@ -9518,6 +9518,56 @@ def warn_hip_omp_target_directives : Warning<
   "HIP does not support OpenMP target directives; directive has been ignored">,
   InGroup<HIPOpenMPOffloading>, DefaultError;
 
+// RAISA diagnostics.
+def err_method_used_for_kern_call : Error<
+  "method '%0' can not used for raisa kernel call">;
+def err_raisa_address_space_rpuvar : Error<
+  "__device__, and __shared__ variables must use default address space">;
+def err_raisa_device_exceptions : Error<
+  "cannot use '%0' in "
+  "%select{__device__|__global__|__host__|__host__ __device__}1 function">;
+def err_raisa_functions_have_conflict_param : Error<
+  "%select{__global__|__host__}0 functions can not have __shared__ parameter">;
+def err_raisa_global_function_long_param : Error<
+  "__global__ functions can not have parameter exceeds 32-bit">;
+def err_raisa_global_function_no_template : Error<
+  "__global__ functions can not be function template">;
+def err_raisa_global_function_reference_param : Error<
+  "__global__ functions can not have reference type parameter">;
+def err_raisa_kern_is_method : Error<
+  "raisa kernel function %0 can not be a member function">;
+def err_raisa_no_vector_on_global : Error<
+  "'no_vector' attribute cannot be applied to '__global__' functions">;
+def err_raisa_ovl_target : Error<
+  "%select{__device__|__global__|__host__|__host__ __device__}0 function %1 "
+  "cannot overload %select{__device__|__global__|__host__|__host__ __device__}2 function %3">;
+def err_raisa_ref_bad_target : Error<
+  "reference to %select{__device__|__global__|__host__|__host__ __device__}0 "
+  "%select{function|variable}1 %2 in "
+  "%select{__device__|__global__|__host__|__host__ __device__}3 function">;
+def err_raisa_ref_to_device_global_var : Error<
+  "cannot use __device__ global variable in host function">;
+def err_raisa_shared_file_scope_var : Error<
+  "__shared__ global or static variables not allowed">;
+def err_raisa_shared_var_in_host_func : Error<
+  "__shared__ variables can not be defined in __host__ functions">;
+def err_raisa_shared_var_no_pod : Error<
+  "__shared__ variables can only have POD tpyes">;
+def err_raisa_unattributed_constexpr_cannot_overload_device : Error<
+  "constexpr function %0 without __host__ or __device__ attributes cannot "
+  "overload __device__ function with same signature; Add a __host__ "
+  "attribute, or build with -fno-raisa-host-device-constexpr">;
+def err_raisa_vector_variable_init : Error<
+  "vector variable can not be initialized in array form">;
+def err_va_arg_in_device_raisa : Error<
+  "RAISA device code does not support va_arg">;
+def err_variadic_device_fn_raisa : Error<
+  "'%select{__device__|__global__}0' variadic function is not supported">;
+def note_raisa_conflicting_device_function_declared_here : Note<
+  "conflicting __device__ function declared here">;
+def note_raisa_ovl_candidate_target_mismatch : Note<
+  "candidate template ignored: target attributes do not match">;
+
 def warn_non_pod_vararg_with_format_string : Warning<
   "cannot pass %select{non-POD|non-trivial}0 object of type %1 to variadic "
   "%select{function|block|method|constructor}2; expected type from format "
@@ -9750,6 +9800,14 @@ def warn_redefine_extname_not_applied : Warning<
   "not applied to %select{function|variable}0 %1">,
   InGroup<Pragmas>;
 } // End of general sema category.
+
+// RAISA/TSM diagnostics that deliberately carry no diagnostic category.
+def err_tsm_unsupported_ct_intrinsic : Error<
+  "intrinsic is not supported by CT">;
+def err_tsm_unsupported_ct_intrinsic_with_type : Error<
+  "this intrinsic with type %0 is not supported by CT">;
+def err_typecheck_indirection_through_unsupported_pointer : Error<
+  "indirection not permitted on operand of type %0">;
 
 // inline asm.
 let CategoryName = "Inline Assembly Issue" in {
