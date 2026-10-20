@@ -1578,6 +1578,11 @@ ToolChain::getSystemGPUArchs(const llvm::opt::ArgList &Args) const {
   return SmallVector<std::string>();
 }
 
+Expected<SmallVector<std::string>>
+ToolChain::getSystemRPUArchs(const llvm::opt::ArgList &Args) const {
+  return SmallVector<std::string>();
+}
+
 SanitizerMask ToolChain::getSupportedSanitizers() const {
   // Return sanitizers which don't require runtime support and are not
   // platform dependent.
@@ -1606,6 +1611,9 @@ SanitizerMask ToolChain::getSupportedSanitizers() const {
 
 void ToolChain::AddCudaIncludeArgs(const ArgList &DriverArgs,
                                    ArgStringList &CC1Args) const {}
+
+void ToolChain::AddRaisaIncludeArgs(const ArgList &DriverArgs,
+                                    ArgStringList &CC1Args) const {}
 
 void ToolChain::AddHIPIncludeArgs(const ArgList &DriverArgs,
                                   ArgStringList &CC1Args) const {}
