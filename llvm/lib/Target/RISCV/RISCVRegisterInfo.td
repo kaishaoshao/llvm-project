@@ -857,6 +857,22 @@ def FCSR   : RISCVReg<0, "fcsr">;
 def XFRM      : RISCVReg<0, "xfrm">;
 def MEM_ALLOC : RISCVReg<0, "mem_alloc">;
 
+// TX8/RAISA SIMT execution mask (the "(B)" EXEC family, line `wt-exec`).
+//
+// `$exec` is the lane-predicate state that every vector instruction executes
+// under.  It has no encoding of its own and belongs to no register class, so it
+// is only ever named through implicit operands:
+//   * ISETEXEC/ISETEXEC0/ISETEXEC1 define it (RISCVInstrInfoXTsm82s.td),
+//   * MOVEXECZ reads it,
+//   * TX8LegalizeEXEC adds an implicit use of it to every instruction that
+//     consumes the vector configuration (`implicit $vl`), which is what the
+//     vendor's post-ISel pass does and what its MIR shows.
+// The vendor numbers it directly after NoRegister, i.e. EXEC == 1, which shifts
+// `vl` to 8 -- exactly the constant the decompiled pass tests with
+// `hasRegisterImplicitUseOperand(MI, 8)`.  It is declared here, ahead of the
+// other CSR-like registers, for that reason.
+def EXEC      : RISCVReg<0, "exec">;
+
 // Shadow Stack register
 def SSP    : RISCVReg<0, "ssp">;
 

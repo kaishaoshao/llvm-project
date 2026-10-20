@@ -554,6 +554,28 @@ bool RISCVPreRAExpandPseudo::expandMI(MachineBasicBlock &MBB,
     return expandLoadTLSGDAddress(MBB, MBBI, NextMBBI);
   case RISCV::PseudoLA_TLSDESC:
     return expandLoadTLSDescAddress(MBB, MBBI, NextMBBI);
+  case RISCV::PseudoRAISA_GET_KERNEL_ENTRY_EXEC: {
+    // TX82 (wt-exec line): `llvm.riscv.raisa.get.kernel.entry.exec` is the lane
+    // mask a SIMT kernel starts with.  The vendor materialises it as an
+    // all-zero b32 vector, `vmsne.vv vd, vd, vd`, with every operand undef --
+    // its MIR is
+    //     $v9 = PseudoVMSNE_VV_M1 undef $v9, undef $v9, -1, 5
+    // -- and the `nor.s` the IR itself contains then turns that into the
+    // all-ones entry mask.  The expansion has to happen before
+    // RISCVInsertVSETVLI so that the pass computes an e32/m1 configuration for
+    // it (the vendor expands it inside that pass instead; the resulting
+    // instruction sequence is the same).
+    Register Dst = MBBI->getOperand(0).getReg();
+    DebugLoc DL = MBBI->getDebugLoc();
+    BuildMI(MBB, MBBI, DL, TII->get(RISCV::PseudoVMSNE_VV_M1), Dst)
+        .addReg(Dst, RegState::Undef)
+        .addReg(Dst, RegState::Undef)
+        .addImm(-1) // VL: unknown, RISCVInsertVSETVLI decides
+        .addImm(5); // log2(SEW) == e32
+    NextMBBI = std::next(MBBI);
+    MBBI->eraseFromParent();
+    return true;
+  }
   }
   return false;
 }

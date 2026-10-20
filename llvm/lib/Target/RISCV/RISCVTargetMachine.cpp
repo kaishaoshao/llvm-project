@@ -142,6 +142,9 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   initializeRISCVVectorPeepholePass(*PR);
   initializeRISCVVLOptimizerPass(*PR);
   initializeTX8InsertXFRMPass(*PR);
+  // wt-exec line: the vendor runs `legalize-exec` after `riscv-copyelim`, i.e.
+  // in addPostRegAlloc() below.
+  initializeTX8LegalizeEXECPass(*PR);
   initializeTX8OptimizeConfigInstrsPass(*PR);
   initializeTX8TransformSIMTToSIMDPass(*PR);
   initializeTX8LowerSharedLegacyPass(*PR);
@@ -705,6 +708,14 @@ void RISCVPassConfig::addPostRegAlloc() {
   if (TM->getOptLevel() != CodeGenOptLevel::None &&
       EnableRedundantCopyElimination)
     addPass(createRISCVRedundantCopyEliminationPass());
+
+  // TX82 (wt-exec line): legalize the SIMT EXEC lane mask for RAISA device
+  // kernels.  The vendor's pipeline puts `legalize-exec` immediately after
+  // `riscv-copyelim` (`-mllvm -debug-pass=Structure`), i.e. after register
+  // allocation and after the post-RA copy propagation, and before the
+  // post-RA pseudo expansion that lowers the RVV pseudos.
+  if (TM->getTargetTriple().isRaisa())
+    addPass(createTX8LegalizeEXECPass());
 }
 
 void RISCVTargetMachine::registerPassBuilderCallbacks(PassBuilder &PB) {

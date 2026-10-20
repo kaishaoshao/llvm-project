@@ -19,8 +19,16 @@
 //===----------------------------------------------------------------------===//
 // XTsm82s scalar/stream (SR) register file: sr0..sr31
 //
-// These registers live in the 5-bit operand slots but are not part of
-// the integer register file, so the class is not allocatable.
+// Each SR register is one 128-bit SIMT mask.  Together with `$exec` this is the
+// register file that carries the "(B)" EXEC/mask family:
+//
+//     <1 x i128> and_s / nor_s / mov128.s.v   ->  def SR
+//     isetexec                                ->  use  SR, def $exec
+//
+// The values are real allocatable values (the vendor's post-RA MIR shows them
+// in $s0/$s1...), so the class is allocatable and its register info is 128 bits
+// wide -- the reconstructed asm layer had it as a non-allocatable `untyped`
+// class because nothing selected into it yet.
 //===----------------------------------------------------------------------===//
 
 foreach Index = 0-31 in {
@@ -28,10 +36,14 @@ foreach Index = 0-31 in {
                  DwarfRegNum<[!add(Index, 3104)]>;
 }
 
-let RegInfos = XLenRI in
-def SR : RISCVRegisterClass<[untyped], 32,
+def XTsmSRRI : RegInfoByHwMode<[RV32, RV64],
+                               [RegInfo<128, 128, 128>,
+                                RegInfo<128, 128, 128>]>;
+
+let RegInfos = XTsmSRRI in
+def SR : RISCVRegisterClass<[v1i128], 128,
                              (add (sequence "SR%u", 0, 31))> {
-  let isAllocatable = 0;
+  let isAllocatable = 1;
 }
 
 // 5-bit unsigned immediate used by the XTsm82s immediate forms.
@@ -345,14 +357,32 @@ def XTsm_ISETEXEC : XTsm82sInst<(outs), (ins SR:$vs2), "isetexec", "$vs2", [HasV
   let Inst{19-0} = 0b10000111000001111011;
   let Inst{31-25} = 0b1011111;
   let Inst{24-20} = vs2;
+  // Writing the lane mask is the whole point of the instruction, so it must
+  // survive DCE even when the result is unused (the vendor's MIR keeps
+  // `ISETEXEC ..., implicit-def dead $exec`), and it defines `$exec` just like
+  // the vendor's own definition does.
+  let Defs = [EXEC];
+  let hasSideEffects = 1;
+  // `llvm.riscv.set.exec*` are IntrInaccessibleMemOnly; TableGen requires the
+  // selected instruction to declare the matching memory effects.
+  let mayLoad = 1;
+  let mayStore = 1;
 }
 
 def XTsm_ISETEXEC0 : XTsm82sInst<(outs), (ins), "isetexec0", "", [HasVendorXTsm82s]> {
   let Inst{31-0} = 0b10111110000000000111000001111011;
+  let Defs = [EXEC];
+  let hasSideEffects = 1;
+  let mayLoad = 1;
+  let mayStore = 1;
 }
 
 def XTsm_ISETEXEC1 : XTsm82sInst<(outs), (ins), "isetexec1", "", [HasVendorXTsm82s]> {
   let Inst{31-0} = 0b10111110000000001111000001111011;
+  let Defs = [EXEC];
+  let hasSideEffects = 1;
+  let mayLoad = 1;
+  let mayStore = 1;
 }
 
 def XTsm_KCORE_NCC_READ : XTsm82sInst<(outs GPR:$rd), (ins GPR:$rs2), "kcore_ncc_read", "$rd, $rs2", [HasVendorXTsm82s]> {
@@ -847,6 +877,10 @@ def XTsm_MOVEXECZ : XTsm82sInst<(outs GPR:$rd), (ins), "movexecz", "$rd", [HasVe
   let Inst{6-0} = 0b1111011;
   let Inst{31-12} = 0b11110110000000000001;
   let Inst{11-7} = rd;
+  // `movexecz rd` reads the zero-ness of the current lane mask, exactly as the
+  // vendor's MIR prints it: `$x10 = MOVEXECZ implicit $exec`.
+  let Uses = [EXEC];
+  let hasSideEffects = 1;
 }
 
 def XTsm_MV128_S_V : XTsm82sInst<(outs SR:$vd), (ins VR:$vs2), "mv128.s.v", "$vd, $vs2", [HasVendorXTsm82s]> {
@@ -4424,6 +4458,104 @@ let Predicates = [HasVendorXTsm82s, HasVInstructions] in
 def : InstAlias<"vneg.v $vd, $vs",
                 (XTsm_VRSUB_VX VR:$vd, VR:$vs, X0, zero_reg)>;
 
+
+//===----------------------------------------------------------------------===//
+// EXEC / SIMT-mask family ("(B)"): pseudos
+//
+// The vendor lowers the fork's EXEC/mask intrinsics in three steps; this tree
+// reproduces the same three steps, so the instruction stream matches:
+//
+//   1. ISel (RISCVISelDAGToDAG.cpp) -- `llvm.riscv.and.s` & friends become the
+//      real XTsm pseudo/mask instructions, while the two intrinsics that need
+//      a later pass become the pseudos below.
+//   2. pre-RA (RISCVExpandPseudoInsts.cpp) -- PseudoRAISA_GET_KERNEL_ENTRY_EXEC
+//      becomes `PseudoVMSNE_VV_M1` with all-undef operands, i.e. an all-zero
+//      b32 vector (`vmsne.vv vd, vd, vd`).  It has to happen before
+//      RISCVInsertVSETVLI so that the pass configures e32/m1 for it.
+//   3. post-RA (TX8LegalizeEXEC.cpp) -- PseudoRAISA_DIVERGENT becomes
+//         ISETEXEC <mask>, implicit-def $exec
+//         $rd = MOVEXECZ implicit $exec
+//         $rd = Kcore_Ncc_Read killed $rd
+//      and every instruction that implicitly reads `$vl` gets an implicit use
+//      of `$exec` added.
+//
+// PseudoRAISA_DIVERGENT deliberately survives until post-RA: the vendor only
+// creates the ISETEXEC/MOVEXECZ pair once the mask is in its final physical
+// register, so that the kill flags on the mask operand can be dropped.
+//===----------------------------------------------------------------------===//
+
+// `llvm.riscv.raisa.divergent`: set EXEC from a 128-bit mask and return
+// "no lane left active" (execz).  raisa.divergent is IntrNoMem +
+// IntrHasSideEffects, hence hasSideEffects = 1.
+let isPseudo = 1, hasSideEffects = 1, mayLoad = 0, mayStore = 0 in
+def PseudoRAISA_DIVERGENT : Pseudo<(outs GPR:$rd), (ins SR:$vs2), []>;
+
+// `llvm.riscv.raisa.get.kernel.entry.exec` is an *overloaded* intrinsic
+// (`llvm_anyvector_ty`) with no operands, so its result type can only be
+// inferred from the pattern's destination register class.  The generic `VR`
+// class holds dozens of vector types and TableGen refuses to guess, so the
+// mask result uses this single-type view of `VR` instead: same registers in
+// the same allocation order, only narrower in type.  The instruction that
+// replaces it (`PseudoVMSNE_VV_M1`) is defined on `VR`, which this class is a
+// subclass of.
+def VTXExecMask : VReg<[vbool32_t],
+                       (add (sequence "V%u", 8, 31),
+                            (sequence "V%u", 0, 7)), 1>;
+
+// `llvm.riscv.raisa.get.kernel.entry.exec`: the lane mask the kernel starts
+// with.  IntrNoMem + IntrConvergent, so hasSideEffects = 0.
+let isPseudo = 1, hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
+def PseudoRAISA_GET_KERNEL_ENTRY_EXEC : Pseudo<(outs VTXExecMask:$vd), (ins), []>;
+
+//===----------------------------------------------------------------------===//
+// EXEC / SIMT-mask family ("(B)"): instruction selection
+//
+// `v1i128` (the `<1 x i128>` the fork's mask intrinsics use) is mapped to the
+// SR register class in RISCVISelLowering.cpp, which is what makes these
+// patterns reachable at all.
+//===----------------------------------------------------------------------===//
+let Predicates = [HasVendorXTsm82s] in {
+
+// <1 x i128> = llvm.riscv.mov128.s.x(i64, i64)
+def : Pat<(int_riscv_mov128_s_x GPR:$rs2, GPR:$rs1),
+          (XTsm_MV128_S_X GPR:$rs2, GPR:$rs1)>;
+
+// <1 x i128> = llvm.riscv.mov128.s.v(<vscale x 2 x i1>)  -- the mask lives in
+// the b32 vector register the mov128 reads.
+def : Pat<(int_riscv_mov128_s_v vbool32_t:$vs2),
+          (XTsm_MV128_S_V VR:$vs2)>;
+
+// The SIMT binary ops on 128-bit masks.
+def : Pat<(int_riscv_and_s v1i128:$vs2, v1i128:$vs1),
+          (XTsm_AND_SS SR:$vs2, SR:$vs1)>;
+def : Pat<(int_riscv_or_s v1i128:$vs2, v1i128:$vs1),
+          (XTsm_OR_SS SR:$vs2, SR:$vs1)>;
+def : Pat<(int_riscv_xor_s v1i128:$vs2, v1i128:$vs1),
+          (XTsm_XOR_SS SR:$vs2, SR:$vs1)>;
+def : Pat<(int_riscv_andn_s v1i128:$vs2, v1i128:$vs1),
+          (XTsm_ANDN_SS SR:$vs2, SR:$vs1)>;
+def : Pat<(int_riscv_orn_s v1i128:$vs2, v1i128:$vs1),
+          (XTsm_ORN_SS SR:$vs2, SR:$vs1)>;
+def : Pat<(int_riscv_nand_s v1i128:$vs2, v1i128:$vs1),
+          (XTsm_NAND_SS SR:$vs2, SR:$vs1)>;
+def : Pat<(int_riscv_nor_s v1i128:$vs2, v1i128:$vs1),
+          (XTsm_NOR_SS SR:$vs2, SR:$vs1)>;
+def : Pat<(int_riscv_xnor_s v1i128:$vs2, v1i128:$vs1),
+          (XTsm_XNOR_SS SR:$vs2, SR:$vs1)>;
+
+// void llvm.riscv.set.exec(<1 x i128>)
+def : Pat<(int_riscv_set_exec v1i128:$vs2), (XTsm_ISETEXEC SR:$vs2)>;
+
+// i64 = llvm.riscv.raisa.divergent(<1 x i128>); finished by TX8LegalizeEXEC.
+def : Pat<(int_riscv_raisa_divergent v1i128:$vs2),
+          (PseudoRAISA_DIVERGENT SR:$vs2)>;
+
+// <vscale x 2 x i1> = llvm.riscv.raisa.get.kernel.entry.exec();
+// finished by RISCVPreRAExpandPseudo.
+def : Pat<(int_riscv_raisa_get_kernel_entry_exec),
+          (PseudoRAISA_GET_KERNEL_ENTRY_EXEC)>;
+
+} // Predicates = [HasVendorXTsm82s]
 //===----------------------------------------------------------------------===//
 // XTsm82s (RAISA) : fork RVV pseudos + ISel patterns  (R2 line, patch 1010)
 //

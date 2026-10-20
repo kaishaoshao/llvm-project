@@ -278,6 +278,21 @@ RISCVTargetLowering::RISCVTargetLowering(const TargetMachine &TM,
     addRegisterClass(MVT::riscv_nxv32i8x2, &RISCV::VRN2M4RegClass);
   }
 
+  // TX82 (wt-exec line): the "(B)" EXEC/SIMT-mask family moves 128-bit lane
+  // masks around in the `SR` register file (`llvm.riscv.and.s`,
+  // `llvm.riscv.nor.s`, `llvm.riscv.mov128.s.*`, `llvm.riscv.set.exec`,
+  // `llvm.riscv.raisa.divergent` all take or return `<1 x i128>`).  Making
+  // v1i128 legal is what stops SelectionDAG from asking the target to
+  // custom-type-legalize those intrinsics ("Don't know how to custom type
+  // legalize this intrinsic!", RISCVISelLowering.cpp ReplaceNodeResults).
+  // The vendor's `srf128` register class is exactly this mapping; the
+  // intrinsics themselves are selected by the Pat<> patterns in
+  // RISCVInstrInfoXTsm82s.td.
+  // NOTE (wt-exec line): this is the only hunk this line needs in a file that
+  // the E line also edits, and it is deliberately two lines.
+  if (STI.hasVendorXTsm82s())
+    addRegisterClass(MVT::v1i128, &RISCV::SRRegClass);
+
   // Compute derived properties from the register classes.
   computeRegisterProperties(STI.getRegisterInfo());
 

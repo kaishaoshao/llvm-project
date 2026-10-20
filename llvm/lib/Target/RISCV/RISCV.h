@@ -130,6 +130,10 @@ void initializeTX8LowerSharedLegacyPass(PassRegistry &);
 FunctionPass *createTX8OptimizeConfigInstrsPass();
 void initializeTX8OptimizeConfigInstrsPass(PassRegistry &);
 
+// TX8LegalizeEXEC.cpp -- post-RA legalization of the SIMT EXEC lane mask.
+FunctionPass *createTX8LegalizeEXECPass();
+void initializeTX8LegalizeEXECPass(PassRegistry &);
+
 FunctionPass *createTX8RegisterRenamePass();
 void initializeTX8RegisterRenamePass(PassRegistry &);
 bool isTX8VRegRenameEnabled();
