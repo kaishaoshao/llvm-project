@@ -230,6 +230,33 @@ RISCVTargetMachine::RISCVTargetMachine(const Target &T, const Triple &TT,
     report_fatal_error("Fuchsia is only supported for 64-bit");
 
   setCFIFixup(true);
+
+  // Vendor fork: the RAISA (SIMT) device target requires structured control
+  // flow.  Both sides of a divergent branch execute under an exec mask, so
+  // duplicating blocks (tail duplication / tail merging) and splitting
+  // critical edges is wrong there.
+  //
+  // Evidence (vendor object, `libLLVMRISCVCodeGen.a(RISCVTargetMachine.cpp.o)`,
+  // `RISCVTargetMachine::RISCVTargetMachine` at +0x16a .. +0x18b):
+  //     mov 0x2c(%rbp),%eax        ; eax = Triple::OSType
+  //     cmp $0x2a,%eax             ; 0x2a = 42 = Triple::RAISA
+  //     jne ...
+  //     orb $0x1,0x2b0(%rbx)       ; TargetMachine::RequireStructuredCFG |= 1
+  // The vendor object has no such store for any other OS type.
+  //
+  // Observable consequences, RAISA only:
+  //   * TargetPassConfig::addMachineLateOptimization() skips the late
+  //     `tailduplication` pass -- the vendor's `-print-after-all` on an `.rc`
+  //     cell has no `tailduplication` after `branch-folder`, while its musl
+  //     `.c` pipeline does have one.
+  //   * MachineBlockPlacement::allowTailDupPlacement() is false: placement
+  //     neither duplicates the return block into a predecessor nor tail-merges,
+  //     and BranchFolding's tail merge is disabled too.
+  //   * MachineBasicBlock::canSplitCriticalEdge() refuses to split edges.
+  // The flag is a Triple property, so musl (riscv64-unknown-linux-musl) is
+  // unaffected -- confirmed by the vendor's own musl pipeline.
+  if (TT.isRaisa())
+    setRequiresStructuredCFG(true);
 }
 
 const RISCVSubtarget *
