@@ -193,6 +193,9 @@ def hip_Group : OptionGroup<"<HIP group>">, Group<f_Group>,
                    DocName<"HIP options">,
                    Visibility<[ClangOption, CLOption]>;
 
+def raisa_Group : OptionGroup<"<RAISA group>">, Group<f_Group>,
+                   Visibility<[ClangOption, CLOption]>;
+
 def m_Group : OptionGroup<"<m group>">, Group<CompileOnly_Group>,
               DocName<"Target-dependent compilation options">,
               Visibility<[ClangOption, CLOption]>;
@@ -635,6 +638,7 @@ defvar hip = LangOpts<"HIP">;
 defvar gnu_mode = LangOpts<"GNUMode">;
 defvar asm_preprocessor = LangOpts<"AsmPreprocessor">;
 defvar hlsl = LangOpts<"HLSL">;
+defvar raisa = LangOpts<"RAISA">;
 
 defvar std = !strconcat("LangStandard::getLangStandardForKind(", lang_std.KeyPath, ")");
 
@@ -1186,6 +1190,11 @@ defm gpu_rdc : BoolFOption<"gpu-rdc",
   PosFlag<SetTrue, [], [ClangOption, CC1Option],
           "Generate relocatable device code, also known as separate compilation mode">,
   NegFlag<SetFalse>>;
+defm rpu_rdc : BoolFOption<"rpu-rdc",
+  LangOpts<"RPURelocatableDeviceCode">, DefaultFalse,
+  PosFlag<SetTrue, [], [ClangOption, CC1Option],
+          "Generate relocatable device code, also known as separate compilation mode">,
+  NegFlag<SetFalse>>;
 
 defm offload_implicit_host_device_templates :
   BoolFOption<"offload-implicit-host-device-templates",
@@ -1306,6 +1315,15 @@ defm cuda_short_ptr : BoolFOption<"cuda-short-ptr",
   TargetOpts<"NVPTXUseShortPointers">, DefaultFalse,
   PosFlag<SetTrue, [], [ClangOption, CC1Option],
           "Use 32-bit pointers for accessing const/local/shared address spaces">,
+  NegFlag<SetFalse>>;
+}
+let Group = raisa_Group in {
+def : Flag<["-"], "fraisa-rdc">, Alias<frpu_rdc>;
+def : Flag<["-"], "fno-raisa-rdc">, Alias<fno_rpu_rdc>;
+defm raisa_short_ptr : BoolFOption<"raisa-short-ptr",
+  TargetOpts<"TSRPUUseShortPointers">, DefaultFalse,
+  PosFlag<SetTrue, [], [ClangOption, CC1Option],
+          "Use 32-bit pointers for accessing shared address spaces">,
   NegFlag<SetFalse>>;
 }
 
@@ -3225,7 +3243,7 @@ def fms_kernel : Flag<["-"], "fms-kernel">, Group<f_Group>,
 // term here.
 defm declspec : BoolOption<"f", "declspec",
   LangOpts<"DeclSpecKeyword">, DefaultFalse,
-  PosFlag<SetTrue, [], [ClangOption], "Allow", [fms_extensions.KeyPath, fborland_extensions.KeyPath, cuda.KeyPath]>,
+  PosFlag<SetTrue, [], [ClangOption], "Allow", [fms_extensions.KeyPath, fborland_extensions.KeyPath, cuda.KeyPath, raisa.KeyPath]>,
   NegFlag<SetFalse, [], [ClangOption], "Disallow">,
   BothFlags<[], [ClangOption, CC1Option],
           " __declspec as a keyword">>, Group<f_clang_Group>;
@@ -5845,6 +5863,81 @@ def : Flag<["-"], "nogpulib">,
       Alias<no_offloadlib>,
       Visibility<[ClangOption, CC1Option, FlangOption, FC1Option]>;
 def : Flag<["-"], "nocudalib">, Alias<no_offloadlib>;
+
+//===----------------------------------------------------------------------===//
+// RAISA Toolchain Options
+//===----------------------------------------------------------------------===//
+
+def m_tsrpu_Features_Group : OptionGroup<"<tsrpu features group>">, Group<m_Group>;
+
+def raisa_device_only : Flag<["--"], "raisa-device-only">, Alias<offload_device_only>,
+  HelpText<"Compile RAISA code for device only">;
+def raisa_host_only : Flag<["--"], "raisa-host-only">, Alias<offload_host_only>,
+  HelpText<"Compile RAISA code for host only. Has no effect on non-RAISA compilations.">;
+def raisa_compile_host_device : Flag<["--"], "raisa-compile-host-device">,
+  HelpText<"Compile RAISA code for both host and device (default).  Has no "
+           "effect on non-RAISA compilations.">;
+def raisa_combine_device : Flag<["--"], "raisa-combine-device">,
+  HelpText<"Combine all device objects into one as the offload of the last host object.">;
+def raisa_link : Flag<["--"], "raisa-link">,
+  HelpText<"Link clang-offload-bundler bundles for RAISA">;
+def raisa_path_EQ : Joined<["--"], "raisa-path=">, Group<i_Group>,
+  HelpText<"RAISA installation path">;
+def raisa_path_ignore_env : Flag<["--"], "raisa-path-ignore-env">, Group<i_Group>,
+  HelpText<"Ignore environment variables to detect RAISA installation">;
+def tsrpuas_path_EQ : Joined<["--"], "tsrpuas-path=">, Group<raisa_Group>,
+  HelpText<"Path to tsrpuas (used for compiling RAISA code)">;
+def no_raisa_version_check : Flag<["--"], "no-raisa-version-check">,
+  HelpText<"Don't error out if the detected version of the RAISA install is "
+           "too low for the requested RAISA gpu architecture.">;
+def raisa_noopt_device_debug : Flag<["--"], "raisa-noopt-device-debug">,
+  Group<raisa_Group>,
+  HelpText<"Enable device-side debug info generation. Disables tsrpuas optimizations.">;
+def no_raisa_noopt_device_debug : Flag<["--"], "no-raisa-noopt-device-debug">,
+  Group<raisa_Group>;
+def raisa_device_lib_EQ : Joined<["--"], "raisa-device-lib=">, Group<Link_Group>,
+  HelpText<"RAISA device library">;
+def raisa_device_lib_path_EQ : Joined<["--"], "raisa-device-lib-path=">, Group<Link_Group>,
+  HelpText<"RAISA device library path">;
+def raisa_rpu_arch_EQ : Joined<["--"], "raisa-rpu-arch=">, Flags<[NoXarchOption]>,
+  Alias<offload_arch_EQ>;
+def no_raisa_rpu_arch_EQ : Joined<["--"], "no-raisa-rpu-arch=">, Flags<[NoXarchOption]>,
+  Alias<no_offload_arch_EQ>;
+def tstx_arch_tool_EQ : Joined<["--"], "tstx-arch-tool=">, Group<offload_Group>,
+  Alias<offload_arch_tool_EQ>;
+def rpu_bundle_output : Flag<["--"], "rpu-bundle-output">, Group<hip_Group>,
+  HelpText<"Bundle output files of RAISA device compilation">;
+def no_rpu_bundle_output : Flag<["--"], "no-rpu-bundle-output">, Group<hip_Group>,
+  HelpText<"Do not bundle output files of RAISA device compilation">;
+def rpu_use_aux_triple_only : Flag<["--"], "rpu-use-aux-triple-only">,
+  Group<offload_Group>, Flags<[NoXarchOption, HelpHidden]>,
+  HelpText<"Prepare '-aux-triple' only without populating '-aux-target-cpu' and '-aux-target-feature'.">;
+def frpu_flush_denormals_to_zero : Flag<["-"], "frpu-flush-denormals-to-zero">,
+  Group<offload_Group>,
+  HelpText<"Flush denormal floating point values to zero in RAISA device mode.">;
+def fno_rpu_flush_denormals_to_zero : Flag<["-"], "fno-rpu-flush-denormals-to-zero">,
+  Group<offload_Group>;
+def fraisa_emit_relocatable : Flag<["-"], "fraisa-emit-relocatable">, Group<hip_Group>,
+  HelpText<"Compile RAISA source to relocatable">;
+def fno_raisa_emit_relocatable : Flag<["-"], "fno-raisa-emit-relocatable">,
+  Group<hip_Group>,
+  HelpText<"Do not override toolchain to compile RAISA source to relocatable">;
+def fraisa_dump_offload_linker_script : Flag<["-"], "fraisa-dump-offload-linker-script">,
+  Group<f_Group>, Flags<[NoArgumentUnused, HelpHidden]>;
+def Xraisa_fatbinary : Separate<["-"], "Xraisa-fatbinary">,
+  HelpText<"Pass <arg> to fatbinary invocation">, MetaVarName<"<arg>">;
+def Xraisa_tsrpuas : Separate<["-"], "Xraisa-tsrpuas">,
+  HelpText<"Pass <arg> to the tsrpuas assembler">, MetaVarName<"<arg>">,
+  Visibility<[ClangOption, CLOption]>;
+def fthinlto_distributor_EQ : Joined<["-"], "fthinlto-distributor=">, Group<f_Group>,
+  Visibility<[ClangOption, CLOption]>,
+  HelpText<"Path to the ThinLTO distributor process. If specified, ThinLTO backend compilations will be distributed by LLD">,
+  MetaVarName<"<path>">;
+def Xthinlto_distributor_EQ : CommaJoined<["-"], "Xthinlto-distributor=">,
+  Group<Link_Group>, Flags<[LinkOption]>,
+  Visibility<[ClangOption, CLOption]>,
+  HelpText<"Pass <arg> to the ThinLTO distributor process. Can be specified multiple times or with comma-separated values.">,
+  MetaVarName<"<arg>">;
 def gpulibc : Flag<["-"], "gpulibc">, Visibility<[ClangOption, CC1Option, FlangOption, FC1Option]>,
   HelpText<"Link the LLVM C Library for GPUs">;
 def nogpulibc : Flag<["-"], "nogpulibc">, Visibility<[ClangOption, CC1Option, FlangOption, FC1Option]>;
@@ -8484,11 +8577,11 @@ def vtordisp_mode_EQ : Joined<["-"], "vtordisp-mode=">,
 def fnative_half_type: Flag<["-"], "fnative-half-type">,
   HelpText<"Use the native half type for __fp16 instead of promoting to float">,
   MarshallingInfoFlag<LangOpts<"NativeHalfType">>,
-  ImpliedByAnyOf<[open_cl.KeyPath]>;
+  ImpliedByAnyOf<[open_cl.KeyPath, raisa.KeyPath]>;
 def fnative_half_arguments_and_returns : Flag<["-"], "fnative-half-arguments-and-returns">,
   HelpText<"Use the native __fp16 type for arguments and returns (and skip ABI-specific lowering)">,
   MarshallingInfoFlag<LangOpts<"NativeHalfArgsAndReturns">>,
-  ImpliedByAnyOf<[open_cl.KeyPath, hlsl.KeyPath, hip.KeyPath]>;
+  ImpliedByAnyOf<[open_cl.KeyPath, hlsl.KeyPath, hip.KeyPath, raisa.KeyPath]>;
 def fdefault_calling_conv_EQ : Joined<["-"], "fdefault-calling-conv=">,
   HelpText<"Set default calling convention">,
   Values<"cdecl,fastcall,stdcall,vectorcall,regcall,rtdcall">,
@@ -8631,11 +8724,27 @@ def fno_cuda_host_device_constexpr : Flag<["-"], "fno-cuda-host-device-constexpr
   HelpText<"Don't treat unattributed constexpr functions as __host__ __device__.">,
   MarshallingInfoNegativeFlag<LangOpts<"CUDAHostDeviceConstexpr">>;
 
+def fraisa_is_device : Flag<["-"], "fraisa-is-device">,
+  HelpText<"Generate code for RAISA device">,
+  MarshallingInfoFlag<LangOpts<"RAISAIsDevice">>;
+def fraisa_include_rpubinary : Separate<["-"], "fraisa-include-rpubinary">,
+  HelpText<"Incorporate RAISA device-side binary into host object file.">,
+  MarshallingInfoString<CodeGenOpts<"RaisaRpuBinaryFileName">>;
+def fraisa_allow_variadic_functions : Flag<["-"], "fraisa-allow-variadic-functions">,
+  HelpText<"Allow variadic functions in RAISA device code.">,
+  MarshallingInfoFlag<LangOpts<"RAISAAllowVariadicFunctions">>;
+def fno_raisa_host_device_constexpr : Flag<["-"], "fno-raisa-host-device-constexpr">,
+  HelpText<"Don't treat unattributed constexpr functions as __host__ __device__.">,
+  MarshallingInfoNegativeFlag<LangOpts<"RAISAHostDeviceConstexpr">>;
+
 } // let Visibility = [CC1Option]
 
 //===----------------------------------------------------------------------===//
 // OpenMP Options
 //===----------------------------------------------------------------------===//
+
+def : Flag<["-"], "noraisainc">, Alias<no_offload_inc>;
+def : Flag<["-"], "noraisalib">, Alias<no_offloadlib>;
 
 let Visibility = [CC1Option, FC1Option] in {
 
@@ -9425,3 +9534,7 @@ def wasm_opt : Flag<["--"], "wasm-opt">,
   Group<m_Group>,
   HelpText<"Enable the wasm-opt optimizer (default)">,
   MarshallingInfoNegativeFlag<LangOpts<"NoWasmOpt">>;
+def tx8_asan : Flag<["-"], "tx8-asan">,
+  Visibility<[ClangOption, CC1Option]>,
+  HelpText<"Enable TX8 Fat Pointer Based AddressSanitizer">,
+  MarshallingInfoFlag<CodeGenOpts<"Tx8Asan">>;
