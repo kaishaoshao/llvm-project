@@ -579,14 +579,32 @@ bool SemaRISCV::CheckBuiltinFunctionCall(const TargetInfo &TI,
   }
 
 #ifdef __TSM_RISCV__
-  // RAISA / TX8 CT (compute-tile) targets accept only the CT intrinsic set.
-  // PROVEN: the vendor's CheckBuiltinFunctionCall (SemaRISCV.cpp.o, size
-  // 0x30d5 vs our 0x2eed, +488 B) has a relocation at offset 0xd89 to
-  // SemaRISCV::CheckCTBuiltinFunctionCall, immediately after a 7-character
-  // feature-name lookup ("xtsm82s").  INFERRED: the exact predicate and the
-  // placement of the arm within the function.
-  if (getLangOpts().RAISA)
-    return CheckCTBuiltinFunctionCall(TI, BuiltinID, TheCall);
+  // RAISA / TX8 CT (compute-tile) intrinsic checking.  Recovered from
+  // `SemaRISCV::CheckBuiltinFunctionCall` in the vendor's `SemaRISCV.cpp.o`:
+  //
+  //   2d6: lea -0x5db(%rbx),%eax      ; BuiltinID - BI__builtin_rvv_vadd_vv
+  //   2dc: cmp $0xe60,%eax
+  //   2e1: ja  3f8                    ; outside the RVV block -> skip CT
+  //   d60: TI.hasFeature("xtsm82s")   ; 7-character literal
+  //   d73: je  302                    ; no +xtsm82s -> ordinary RVV checking
+  //   d88: call SemaRISCV::CheckCTBuiltinFunctionCall
+  //   d90: test %al,%al
+  //   d92: je  302                    ; false -> ordinary RVV checking
+  //   d98: jmp 55f                    ; true  -> accept immediately
+  //
+  // Only RVV builtin IDs in [vadd_vv, vadd_vv + 0xE60] reach the CT checker.
+  // The RAISA-only `__riscv_read_reg_*` / `__raisa_*` builtins are enumerated
+  // above that range (5348 / 5394+) and are therefore never CT-checked --
+  // verified under gdb, the vendor's CheckCTBuiltinFunctionCall is not entered
+  // for `__riscv_read_reg_tid_x()`.  Note the unsigned wrap-around for
+  // BuiltinID < vadd_vv reproduces the vendor's `lea`/`ja` exactly.
+  if (BuiltinID - (unsigned)RISCVVector::BI__builtin_rvv_vadd_vv <= 0xE60 &&
+      TI.hasFeature("xtsm82s")) {
+    if (CheckCTBuiltinFunctionCall(TI, BuiltinID, TheCall))
+      return true;
+    // `false` means "not a CT constrained intrinsic": fall through to the
+    // ordinary RVV builtin checks below rather than reporting an error.
+  }
 #endif
 
   // vmulh.vv, vmulh.vx, vmulhu.vv, vmulhu.vx, vmulhsu.vv, vmulhsu.vx,
