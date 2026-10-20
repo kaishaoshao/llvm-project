@@ -598,6 +598,80 @@ let HasBuiltinAlias = false, HasVL = false, HasMasked = false,
 // and LMUL.
 let HeaderCode =
 [{
+#define __riscv_vlmul_ext_v_f8mf8_f8mf4(src) __riscv_vlmul_ext_v_i8mf8_i8mf4(src)
+#define __riscv_vlmul_ext_v_f8mf8_f8mf2(src) __riscv_vlmul_ext_v_i8mf8_i8mf2(src)
+#define __riscv_vlmul_ext_v_f8mf8_f8m1(src)  __riscv_vlmul_ext_v_i8mf8_i8m1(src)
+#define __riscv_vlmul_ext_v_f8mf8_f8m2(src)  __riscv_vlmul_ext_v_i8mf8_i8m2(src)
+#define __riscv_vlmul_ext_v_f8mf8_f8m4(src)  __riscv_vlmul_ext_v_i8mf8_i8m4(src)
+#define __riscv_vlmul_ext_v_f8mf8_f8m8(src)  __riscv_vlmul_ext_v_i8mf8_i8m8(src)
+#define __riscv_vlmul_ext_v_f8mf4_f8mf2(src) __riscv_vlmul_ext_v_i8mf4_i8mf2(src)
+#define __riscv_vlmul_ext_v_f8mf4_f8m1(src)  __riscv_vlmul_ext_v_i8mf4_i8m1(src)
+#define __riscv_vlmul_ext_v_f8mf4_f8m2(src)  __riscv_vlmul_ext_v_i8mf4_i8m2(src)
+#define __riscv_vlmul_ext_v_f8mf4_f8m4(src)  __riscv_vlmul_ext_v_i8mf4_i8m4(src)
+#define __riscv_vlmul_ext_v_f8mf4_f8m8(src)  __riscv_vlmul_ext_v_i8mf4_i8m8(src)
+#define __riscv_vlmul_ext_v_f8mf2_f8m1(src)  __riscv_vlmul_ext_v_i8mf2_i8m1(src)
+#define __riscv_vlmul_ext_v_f8mf2_f8m2(src)  __riscv_vlmul_ext_v_i8mf2_i8m2(src)
+#define __riscv_vlmul_ext_v_f8mf2_f8m4(src)  __riscv_vlmul_ext_v_i8mf2_i8m4(src)
+#define __riscv_vlmul_ext_v_f8mf2_f8m8(src)  __riscv_vlmul_ext_v_i8mf2_i8m8(src)
+#define __riscv_vlmul_ext_v_f8m1_f8m2(src)   __riscv_vlmul_ext_v_i8m1_i8m2(src)
+#define __riscv_vlmul_ext_v_f8m1_f8m4(src)   __riscv_vlmul_ext_v_i8m1_i8m4(src)
+#define __riscv_vlmul_ext_v_f8m1_f8m8(src)   __riscv_vlmul_ext_v_i8m1_i8m8(src)
+#define __riscv_vlmul_ext_v_f8m2_f8m4(src)   __riscv_vlmul_ext_v_i8m2_i8m4(src)
+#define __riscv_vlmul_ext_v_f8m2_f8m8(src)   __riscv_vlmul_ext_v_i8m2_i8m8(src)
+#define __riscv_vlmul_ext_v_f8m4_f8m8(src)   __riscv_vlmul_ext_v_i8m4_i8m8(src)
+
+#define __riscv_vreinterpret_v_f8mf4_i16mf4(src) __riscv_vreinterpret_v_i8mf4_i16mf4(src)
+#define __riscv_vreinterpret_v_f8mf2_i16mf2(src) __riscv_vreinterpret_v_i8mf2_i16mf2(src)
+#define __riscv_vreinterpret_v_f8m1_i16m1(src)   __riscv_vreinterpret_v_i8m1_i16m1(src)
+#define __riscv_vreinterpret_v_f8m2_i16m2(src)   __riscv_vreinterpret_v_i8m2_i16m2(src)
+#define __riscv_vreinterpret_v_f8m4_i16m4(src)   __riscv_vreinterpret_v_i8m4_i16m4(src)
+#define __riscv_vreinterpret_v_f8m8_i16m8(src)   __riscv_vreinterpret_v_i8m8_i16m8(src)
+
+#define __riscv_vreinterpret_v_i16mf4_f8mf4(src) __riscv_vreinterpret_v_i16mf4_i8mf4(src)
+#define __riscv_vreinterpret_v_i16mf2_f8mf2(src) __riscv_vreinterpret_v_i16mf2_i8mf2(src)
+#define __riscv_vreinterpret_v_i16m1_f8m1(src)   __riscv_vreinterpret_v_i16m1_i8m1(src)
+#define __riscv_vreinterpret_v_i16m2_f8m2(src)   __riscv_vreinterpret_v_i16m2_i8m2(src)
+#define __riscv_vreinterpret_v_i16m4_f8m4(src)   __riscv_vreinterpret_v_i16m4_i8m4(src)
+#define __riscv_vreinterpret_v_i16m8_f8m8(src)   __riscv_vreinterpret_v_i16m8_i8m8(src)
+
+#define __riscv_vreinterpret_v_f4mf4_i16mf4(src) __riscv_vreinterpret_v_i8mf4_i16mf4(src)
+#define __riscv_vreinterpret_v_f4mf2_i16mf2(src) __riscv_vreinterpret_v_i8mf2_i16mf2(src)
+#define __riscv_vreinterpret_v_f4m1_i16m1(src)   __riscv_vreinterpret_v_i8m1_i16m1(src)
+#define __riscv_vreinterpret_v_f4m2_i16m2(src)   __riscv_vreinterpret_v_i8m2_i16m2(src)
+#define __riscv_vreinterpret_v_f4m4_i16m4(src)   __riscv_vreinterpret_v_i8m4_i16m4(src)
+#define __riscv_vreinterpret_v_f4m8_i16m8(src)   __riscv_vreinterpret_v_i8m8_i16m8(src)
+
+#define __riscv_vreinterpret_v_i16mf4_f4mf4(src) __riscv_vreinterpret_v_i16mf4_i8mf4(src)
+#define __riscv_vreinterpret_v_i16mf2_f4mf2(src) __riscv_vreinterpret_v_i16mf2_i8mf2(src)
+#define __riscv_vreinterpret_v_i16m1_f4m1(src)   __riscv_vreinterpret_v_i16m1_i8m1(src)
+#define __riscv_vreinterpret_v_i16m2_f4m2(src)   __riscv_vreinterpret_v_i16m2_i8m2(src)
+#define __riscv_vreinterpret_v_i16m4_f4m4(src)   __riscv_vreinterpret_v_i16m4_i8m4(src)
+#define __riscv_vreinterpret_v_i16m8_f4m8(src)   __riscv_vreinterpret_v_i16m8_i8m8(src)
+
+
+#define __riscv_vsetvl_e16mf_bf(avl) __builtin_rvv_vsetvli_bf((size_t)(avl), 1, 7, 1)
+#define __riscv_vsetvl_e16m1_bf(avl)  __builtin_rvv_vsetvli_bf((size_t)(avl), 1, 0, 1)
+#define __riscv_vsetvl_e16m2_bf(avl)  __builtin_rvv_vsetvli_bf((size_t)(avl), 1, 1, 1)
+#define __riscv_vsetvl_e16m4_bf(avl)  __builtin_rvv_vsetvli_bf((size_t)(avl), 1, 2, 1)
+#define __riscv_vsetvl_e16m8_bf(avl)  __builtin_rvv_vsetvli_bf((size_t)(avl), 1, 3, 1)
+
+#define __riscv_vsetvl_e32m1_bf(avl) __builtin_rvv_vsetvli_bf((size_t)(avl), 2, 0, 1)
+#define __riscv_vsetvl_e32m2_bf(avl) __builtin_rvv_vsetvli_bf((size_t)(avl), 2, 1, 1)
+#define __riscv_vsetvl_e32m4_bf(avl) __builtin_rvv_vsetvli_bf((size_t)(avl), 2, 2, 1)
+#define __riscv_vsetvl_e32m8_bf(avl) __builtin_rvv_vsetvli_bf((size_t)(avl), 2, 3, 1)
+
+#define __riscv_vsetvl_e8mf8_bf(avl) __builtin_rvv_vsetvli_bf((size_t)(avl), 0, 5, 1)
+#define __riscv_vsetvl_e16mf4_bf(avl) __builtin_rvv_vsetvli_bf((size_t)(avl), 1, 6, 1)
+#define __riscv_vsetvl_e32mf2_bf(avl) __builtin_rvv_vsetvli_bf((size_t)(avl), 2, 7, 1)
+
+#define __riscv_vsetvlmax_e16mf2_bf() __builtin_rvv_vsetvlimax_bf(1, 7, 1)
+#define __riscv_vsetvlmax_e16m1_bf() __builtin_rvv_vsetvlimax_bf(1, 0, 1)
+#define __riscv_vsetvlmax_e16m2_bf() __builtin_rvv_vsetvlimax_bf(1, 1, 1)
+#define __riscv_vsetvlmax_e16m4_bf() __builtin_rvv_vsetvlimax_bf(1, 2, 1)
+#define __riscv_vsetvlmax_e16m8_bf() __builtin_rvv_vsetvlimax_bf(1, 3, 1)
+
+
+
 #define __riscv_vsetvl_e8mf4(avl) __builtin_rvv_vsetvli((size_t)(avl), 0, 6)
 #define __riscv_vsetvl_e8mf2(avl) __builtin_rvv_vsetvli((size_t)(avl), 0, 7)
 #define __riscv_vsetvl_e8m1(avl) __builtin_rvv_vsetvli((size_t)(avl), 0, 0)
@@ -1455,6 +1529,46 @@ enum __RISCV_FRM {
   __RISCV_FRM_RMM = 4,
 };
 }] in def frm_enum : RVVHeader;
+
+let HeaderCode =
+[{
+// Narrow-conversion to FP8 intriniscs support only RNE rounding mode.
+// Users should use the following saturation mode for its rounding mode operand.
+enum __RISCV_SATURATION {
+  __RISCV_SAT = 0,
+  __RISCV_NO_SAT = 1,
+};
+
+typedef __int128_t __s128_t __attribute__((vector_size(16)));
+
+typedef int8_t fp4;
+typedef int8_t f8e4m3;
+typedef int8_t f8e5m2;
+
+typedef __rvv_int8mf8_t vfloat8e4m3mf8_t;
+typedef __rvv_int8mf4_t vfloat8e4m3mf4_t;
+typedef __rvv_int8mf2_t vfloat8e4m3mf2_t;
+typedef __rvv_int8m1_t vfloat8e4m3m1_t;
+typedef __rvv_int8m2_t vfloat8e4m3m2_t;
+typedef __rvv_int8m4_t vfloat8e4m3m4_t;
+typedef __rvv_int8m8_t vfloat8e4m3m8_t;
+
+typedef __rvv_int8mf8_t vfloat8e5m2mf8_t;
+typedef __rvv_int8mf4_t vfloat8e5m2mf4_t;
+typedef __rvv_int8mf2_t vfloat8e5m2mf2_t;
+typedef __rvv_int8m1_t vfloat8e5m2m1_t;
+typedef __rvv_int8m2_t vfloat8e5m2m2_t;
+typedef __rvv_int8m4_t vfloat8e5m2m4_t;
+typedef __rvv_int8m8_t vfloat8e5m2m8_t;
+
+typedef __rvv_int8mf8_t vfloat4mf8_t;
+typedef __rvv_int8mf4_t vfloat4mf4_t;
+typedef __rvv_int8mf2_t vfloat4mf2_t;
+typedef __rvv_int8m1_t vfloat4m1_t;
+typedef __rvv_int8m2_t vfloat4m2_t;
+typedef __rvv_int8m4_t vfloat4m4_t;
+typedef __rvv_int8m8_t vfloat4m8_t;
+}] in def frm_saturation_fp8_types : RVVHeader;
 
 let UnMaskedPolicyScheme = HasPassthruOperand in {
 let ManualCodegen = [{
