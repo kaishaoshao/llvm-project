@@ -2399,11 +2399,33 @@ foreach vti = AllIntegerVectors in {
       def : Pat<(vti.Vector (riscv_vmv_v_x_vl vti.RegClass:$passthru, GPR:$rs2, VLOpFrag)),
                 (!cast<Instruction>("PseudoVMV_V_X_"#vti.LMul.MX)
                  vti.RegClass:$passthru, GPR:$rs2, GPR:$vl, vti.Log2SEW, TU_MU)>;
-      defvar ImmPat = !cast<ComplexPattern>("sew"#vti.SEW#"simm5");
-      def : Pat<(vti.Vector (riscv_vmv_v_x_vl vti.RegClass:$passthru, (ImmPat simm5:$imm5),
-                                                  VLOpFrag)),
-                (!cast<Instruction>("PseudoVMV_V_I_"#vti.LMul.MX)
-                 vti.RegClass:$passthru, simm5:$imm5, GPR:$vl, vti.Log2SEW, TU_MU)>;
+      // Zero must become `$x0` *at ISel*, not a materialised register: the
+      // fork's reduce sequences splat zero twice (once for the `vmv.v.x`
+      // operand and once for the `vfmv.v.f` accumulator seed), and the vendor
+      // ends up with a single `vmv.v.x vd, zero` because MachineCSE can merge
+      // the two only when both name `$x0`.  With the materialised form the
+      // operands differ (`%n:gpr` vs `$x0`) and one instruction survives
+      // (`mathdev_raisa_reduce_sum_f`).
+      def : Pat<(vti.Vector (riscv_vmv_v_x_vl vti.RegClass:$passthru, (XLenVT 0), VLOpFrag)),
+                (!cast<Instruction>("PseudoVMV_V_X_"#vti.LMul.MX)
+                 vti.RegClass:$passthru, (XLenVT X0), GPR:$vl, vti.Log2SEW, TU_MU)>;
+      // TSM fork (RAISA): the vendor does *not* fold a simm5 constant into
+      // `vmv.v.i` on this intrinsic -- it keeps the splat generic and
+      // materialises the constant into a GPR (or `zero`).  Probe (verbatim,
+      // `probe/vmv_vx_or_vi.ll`, vendor vs ours):
+      //   vmv.v.x.nxv2i32.i64(undef, i32 {0,5,-1}, i64 128)
+      //   vendor: vmv.v.x v8, zero | vmv.v.x v8, a1 (li 5 / li -1)
+      //   ours  : vmv.v.i v8, 0    | vmv.v.i v8, 5  | vmv.v.i v8, -1
+      // so the `sew<N>simm5` variant below is disabled: it matched here and
+      // produced `vmv.v.i`, a byte-level difference on every reduction cell
+      // (`llvm.riscv.vmv.v.x` with a zero splat is how the fork's
+      // `reduce_*` sequences start).  `PseudoVMV_V_I` is still reachable
+      // through the other splat lowerings (BUILD_VECTOR / fpimm0).
+      // defvar ImmPat = !cast<ComplexPattern>("sew"#vti.SEW#"simm5");
+      // def : Pat<(vti.Vector (riscv_vmv_v_x_vl vti.RegClass:$passthru, (ImmPat simm5:$imm5),
+      //                                             VLOpFrag)),
+      //           (!cast<Instruction>("PseudoVMV_V_I_"#vti.LMul.MX)
+      //            vti.RegClass:$passthru, simm5:$imm5, GPR:$vl, vti.Log2SEW, TU_MU)>;
     }
   }
 }
@@ -2634,11 +2656,18 @@ foreach fvti = AllFloatVectors in {
   defvar ivti = GetIntVTypeInfo<fvti>.Vti;
   let Predicates = GetVTypePredicates<ivti>.Predicates in {
     // 13.16. Vector Floating-Point Move Instruction
-    // If we're splatting fpimm0, use vmv.v.x vd, x0.
+    // If we're splatting fpimm0, use vmv.v.x vd, x0 -- which is what the
+    // comment always said, but the pattern used to build `PseudoVMV_V_I` and so
+    // emitted `vmv.v.i vd, 0`.  The vendor keeps `vmv.v.x vd, zero`; this is not
+    // cosmetic: with both zero splats spelled `vmv.v.x vd, x0` MachineCSE folds
+    // them into one register, which is exactly what the vendor's fold/reduce
+    // sequences show.  Probe `probe/vfmv_fpimm0.ll`:
+    //   vfmv.v.f.nxv2f32.i64(undef, 0.0, i64 128)
+    //   vendor: vmv.v.x v8, zero      ours (before): vmv.v.i v8, 0
     def : Pat<(fvti.Vector (riscv_vfmv_v_f_vl
                            fvti.Vector:$passthru, (fvti.Scalar (fpimm0)), VLOpFrag)),
-              (!cast<Instruction>("PseudoVMV_V_I_"#fvti.LMul.MX)
-               $passthru, 0, GPR:$vl, fvti.Log2SEW, TU_MU)>;
+              (!cast<Instruction>("PseudoVMV_V_X_"#fvti.LMul.MX)
+               $passthru, (XLenVT X0), GPR:$vl, fvti.Log2SEW, TU_MU)>;
     def : Pat<(fvti.Vector (riscv_vfmv_v_f_vl
                            fvti.Vector:$passthru, (fvti.Scalar (SelectScalarFPAsInt (XLenVT GPR:$imm))), VLOpFrag)),
               (!cast<Instruction>("PseudoVMV_V_X_"#fvti.LMul.MX)
