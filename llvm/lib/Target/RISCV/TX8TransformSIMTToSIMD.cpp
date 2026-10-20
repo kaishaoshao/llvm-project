@@ -98,6 +98,58 @@ ModulePass *llvm::createTX8TransformSIMTToSIMDPass() {
   return new TX8TransformSIMTToSIMD();
 }
 
+/// `llvm.riscv.read.reg.*` -> what the vendor's pass replaces it with.  Typed
+/// and named verbatim from recon/simt2simd/*.after.ir:
+///
+///   read.reg.tid.x / ntid.y / ntid.z  ->  llvm.riscv.vid (a *per-lane* value,
+///                                          so it becomes a vector in place)
+///   read.reg.ctaid.{x,y,z}            ->  __get_pid(i32 0|1|2)
+///   read.reg.nctaid.{x,y,z}           ->  __grid_dim_{x,y,z}()
+///   read.reg.ntid.x                   ->  __block_dim_x()
+///
+/// The uniform ones stay scalar; the store that consumes them splats with
+/// `llvm.riscv.vmv.v.x` (see the store handling below).  tid.{y,z} and the `w`
+/// dimensions are not in the vendor's table either -- the cells that use them
+/// fail on the vendor side as well, so leave them unsupported.
+struct ReadRegMap {
+  Intrinsic::ID Src;
+  const char *Callee;  // nullptr => per-lane, use llvm.riscv.vid
+  bool HasArg;
+  int Arg;
+};
+
+static const ReadRegMap ReadRegMaps[] = {
+    {Intrinsic::riscv_read_reg_tid_x, nullptr, false, 0},
+    {Intrinsic::riscv_read_reg_ntid_y, nullptr, false, 0},
+    {Intrinsic::riscv_read_reg_ntid_z, nullptr, false, 0},
+    {Intrinsic::riscv_read_reg_ctaid_x, "__get_pid", true, 0},
+    {Intrinsic::riscv_read_reg_ctaid_y, "__get_pid", true, 1},
+    {Intrinsic::riscv_read_reg_ctaid_z, "__get_pid", true, 2},
+    {Intrinsic::riscv_read_reg_nctaid_x, "__grid_dim_x", false, 0},
+    {Intrinsic::riscv_read_reg_nctaid_y, "__grid_dim_y", false, 0},
+    {Intrinsic::riscv_read_reg_nctaid_z, "__grid_dim_z", false, 0},
+    {Intrinsic::riscv_read_reg_ntid_x, "__block_dim_x", false, 0},
+};
+
+static const ReadRegMap *lookupReadReg(Intrinsic::ID ID) {
+  for (const ReadRegMap &M : ReadRegMaps)
+    if (M.Src == ID)
+      return &M;
+  return nullptr;
+}
+
+/// Is this value used for anything other than as a lane index?  `tid.x` is
+/// dropped (the memory operation becomes a whole-vector one) unless it is also
+/// used as a value, in which case the vendor materialises `vid`.
+static bool usedAsValue(const CallInst *CI) {
+  for (const User *U : CI->users()) {
+    const auto *GEP = dyn_cast<GetElementPtrInst>(U);
+    if (GEP && GEP->getNumOperands() == 2 && GEP->getOperand(1) == CI)
+      continue;
+    return true;
+  }
+  return false;
+}
 
 /// LLVM's printed short name for the vector type, e.g. `nxv2f32` / `nxv2bf16`.
 /// The RVV intrinsics are declared under mangled names that end with these
@@ -250,8 +302,10 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
       Function *Callee = CI->getCalledFunction();
       if (!Callee)
         return false;
-      if (Callee->getIntrinsicID() == Intrinsic::riscv_read_reg_tid_x)
+      if (lookupReadReg(Callee->getIntrinsicID())) {
+        WillMap.insert(CI);
         continue;
+      }
       if (!isSupportedScalar(Callee->getIntrinsicID()))
         return false;
       if (Callee->getIntrinsicID() == Intrinsic::experimental_constrained_fadd &&
@@ -289,7 +343,6 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
       if (!Callee)
         return false;
       switch (Callee->getIntrinsicID()) {
-      case Intrinsic::riscv_read_reg_tid_x:
       case Intrinsic::experimental_constrained_fadd:
       case Intrinsic::riscv_raisa_fmax:
       case Intrinsic::riscv_raisa_fmin:
@@ -306,7 +359,9 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
       case Intrinsic::riscv_raisa_div:
         break;
       default:
-        return false;
+        if (!lookupReadReg(Callee->getIntrinsicID()))
+          return false;
+        break;
       }
       continue;
     }
@@ -393,11 +448,24 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
       Value *Base = cast<GetElementPtrInst>(SI->getPointerOperand())
                          ->getPointerOperand();
       auto It = ToVec.find(Val);
-      if (It == ToVec.end())
-        return false;
+      Value *Stored = nullptr;
+      if (It != ToVec.end()) {
+        Stored = It->second;
+      } else {
+        // The value is not per-lane (it is a uniform id read or a scalar
+        // expression over uniforms): the vendor keeps it scalar and splats it
+        // at the store, `vmv.v.x(undef, %val, 128)` right before the
+        // `set.mem.alloc` -- see id_ctaid_x / abi_float after.ir.
+        IRBuilder<> SB(SI);
+        FunctionCallee VMV = declareRVV(
+            M, ("llvm.riscv.vmv.v.x." + VT + ".i64").c_str(),
+            FunctionType::get(VecTy, {VecTy, Val->getType(), Int64Ty}, false));
+        Stored = SB.CreateCall(VMV, {UndefValue::get(VecTy), Val,
+                                     SB.getInt64(SIMT_LANES)});
+      }
       EmitSetMemAlloc(SI);
       IRBuilder<> IB(SI);
-      IB.CreateCall(VSE, {It->second, Base, IB.getInt64(SIMT_LANES)});
+      IB.CreateCall(VSE, {Stored, Base, IB.getInt64(SIMT_LANES)});
       ToErase.push_back(cast<Instruction>(SI->getPointerOperand()));
       ToErase.push_back(SI);
       continue;
@@ -406,7 +474,34 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
     if (!CI)
       continue;
     Intrinsic::ID Src = CI->getCalledFunction()->getIntrinsicID();
-    if (Src == Intrinsic::riscv_read_reg_tid_x) {
+    if (const ReadRegMap *RM = lookupReadReg(Src)) {
+      IRBuilder<> IB(CI);
+      if (!RM->Callee) {
+        // Per-lane value (`tid.x`): becomes `vid`, but only if it is used for
+        // something other than as a lane index -- the fadd/fmax cells only use
+        // it as the index and their vendor IR has no `vid`.
+        if (usedAsValue(CI)) {
+          FunctionCallee VID = declareRVV(
+              M, ("llvm.riscv.vid." + VT + ".i64").c_str(),
+              FunctionType::get(VecTy, {VecTy, Int64Ty}, false));
+          ToVec[CI] = IB.CreateCall(VID, {UndefValue::get(VecTy),
+                                          IB.getInt64(SIMT_LANES)});
+        }
+        ToErase.push_back(CI);
+        continue;
+      }
+      SmallVector<Type *, 1> Params;
+      SmallVector<Value *, 1> Args;
+      if (RM->HasArg) {
+        Params.push_back(Int32Ty);
+        Args.push_back(IB.getInt32(RM->Arg));
+      }
+      FunctionCallee F = M.getOrInsertFunction(
+          RM->Callee, FunctionType::get(Int32Ty, Params, false));
+      if (auto *Fn = dyn_cast<Function>(F.getCallee()))
+        Fn->addFnAttr("no_vector");  // verbatim from the vendor's after.ir
+      CallInst *New = IB.CreateCall(F, Args);
+      CI->replaceAllUsesWith(New);
       ToErase.push_back(CI);
       continue;
     }
