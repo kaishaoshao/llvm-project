@@ -33,6 +33,11 @@ static const unsigned WebAssemblyAddrSpaceMap[] = {
     0,  // cuda_device
     0,  // cuda_constant
     0,  // cuda_shared
+    0,  // raisa_generic
+    0,  // raisa_gmem
+    0,  // raisa_l1shared
+    0,  // raisa_l0ashared
+    0,  // raisa_l0wshared
     0,  // sycl_global
     0,  // sycl_global_device
     0,  // sycl_global_host

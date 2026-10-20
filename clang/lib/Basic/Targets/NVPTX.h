@@ -37,6 +37,11 @@ static const unsigned NVPTXAddrSpaceMap[] = {
     1, // cuda_device
     4, // cuda_constant
     3, // cuda_shared
+    0, // raisa_generic
+    0, // raisa_gmem
+    0, // raisa_l1shared
+    0, // raisa_l0ashared
+    0, // raisa_l0wshared
     1, // sycl_global
     1, // sycl_global_device
     1, // sycl_global_host

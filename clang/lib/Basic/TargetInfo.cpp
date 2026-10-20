@@ -52,6 +52,14 @@ static const LangASMap FakeAddrSpaceMap = {
     16, // hlsl_device
     17, // hlsl_input
     20, // wasm_funcref
+    // RAISA: extend the fake map to the new 30-entry LangASMap size.  The
+    // vendor binary (libclangBasic.a) keeps the original entries and appends
+    // these five values, so they are reproduced verbatim here.
+    21, // raisa_generic
+    22, // raisa_gmem
+    23, // raisa_l1shared
+    24, // raisa_l0ashared
+    25, // raisa_l0wshared
 };
 
 // TargetInfo Constructor.

@@ -23,6 +23,44 @@
 namespace clang {
 namespace targets {
 
+// RISC-V (TSM RPU / RAISA) address space map.  The RAISA lanes mirror the
+// vendor's llvm/Support/TX8AddrSpace.h (namespace RPUAS: GENERIC=0,
+// UNIFORM_GENERIC=1, L1SHARED=2, L0ASHARED=3, L0WSHARED=4).  The values are
+// taken byte-for-byte from the vendor's libclangBasic.a
+// (.rodata._ZN5clang7targetsL17TSRPUAddrSpaceMapE).
+static const unsigned TSRPUAddrSpaceMap[] = {
+    0, // Default
+    1, // opencl_global
+    3, // opencl_local
+    4, // opencl_constant
+    0, // opencl_private
+    0, // opencl_generic
+    1, // opencl_global_device
+    1, // opencl_global_host
+    1, // cuda_device
+    4, // cuda_constant
+    3, // cuda_shared
+    0, // raisa_generic
+    1, // raisa_gmem
+    2, // raisa_l1shared
+    3, // raisa_l0ashared
+    4, // raisa_l0wshared
+    1, // sycl_global
+    1, // sycl_global_device
+    1, // sycl_global_host
+    3, // sycl_local
+    0, // sycl_private
+    0, // ptr32_sptr
+    0, // ptr32_uptr
+    0, // ptr64
+    0, // hlsl_groupshared
+    0, // hlsl_constant
+    0, // hlsl_private
+    0, // hlsl_device
+    0, // hlsl_input
+    20, // wasm_funcref
+};
+
 // RISC-V Target
 class RISCVTargetInfo : public TargetInfo {
 protected:
@@ -49,6 +87,7 @@ public:
     MCountName = "_mcount";
     HasFloat16 = true;
     HasStrictFP = true;
+    AddrSpaceMap = &TSRPUAddrSpaceMap;
   }
 
   bool setCPU(const std::string &Name) override {

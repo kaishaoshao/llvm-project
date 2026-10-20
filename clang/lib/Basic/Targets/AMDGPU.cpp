@@ -48,6 +48,11 @@ const LangASMap AMDGPUTargetInfo::AMDGPUDefIsGenMap = {
     llvm::AMDGPUAS::GLOBAL_ADDRESS,   // cuda_device
     llvm::AMDGPUAS::CONSTANT_ADDRESS, // cuda_constant
     llvm::AMDGPUAS::LOCAL_ADDRESS,    // cuda_shared
+    llvm::AMDGPUAS::GLOBAL_ADDRESS,   // raisa_generic
+    llvm::AMDGPUAS::GLOBAL_ADDRESS,   // raisa_gmem
+    llvm::AMDGPUAS::LOCAL_ADDRESS,    // raisa_l1shared
+    llvm::AMDGPUAS::LOCAL_ADDRESS,    // raisa_l0ashared
+    llvm::AMDGPUAS::LOCAL_ADDRESS,    // raisa_l0wshared
     llvm::AMDGPUAS::GLOBAL_ADDRESS,   // sycl_global
     llvm::AMDGPUAS::GLOBAL_ADDRESS,   // sycl_global_device
     llvm::AMDGPUAS::GLOBAL_ADDRESS,   // sycl_global_host
@@ -77,6 +82,11 @@ const LangASMap AMDGPUTargetInfo::AMDGPUDefIsPrivMap = {
     llvm::AMDGPUAS::GLOBAL_ADDRESS,   // cuda_device
     llvm::AMDGPUAS::CONSTANT_ADDRESS, // cuda_constant
     llvm::AMDGPUAS::LOCAL_ADDRESS,    // cuda_shared
+    llvm::AMDGPUAS::GLOBAL_ADDRESS,   // raisa_generic
+    llvm::AMDGPUAS::GLOBAL_ADDRESS,   // raisa_gmem
+    llvm::AMDGPUAS::LOCAL_ADDRESS,    // raisa_l1shared
+    llvm::AMDGPUAS::LOCAL_ADDRESS,    // raisa_l0ashared
+    llvm::AMDGPUAS::LOCAL_ADDRESS,    // raisa_l0wshared
     // SYCL address space values for this map are dummy
     llvm::AMDGPUAS::FLAT_ADDRESS,     // sycl_global
     llvm::AMDGPUAS::FLAT_ADDRESS,     // sycl_global_device
