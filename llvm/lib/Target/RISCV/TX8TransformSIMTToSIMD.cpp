@@ -502,6 +502,15 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
     FunctionCallee Callee =
         declareRVV(M, Name.c_str(), FunctionType::get(VecTy, Params, false));
     ToVec[CI] = IB.CreateCall(Callee, Args);
+    // Vendor fork: bf16 vector arithmetic is encoded with the BF16 element
+    // format, i.e. vtype bit 8 (RISCVVType::isBF16Fmt), and the vendor selects a
+    // dedicated `PseudoVFADD_BFloat16_*` pseudo for it.  Mark the kernel so that
+    // RISCVInsertVSETVLI emits that bit: the element type is not recoverable
+    // there (MachineRegisterInfo only carries the register class, and the e16
+    // f16/bf16 pseudos share `VR`/`VRM2`/...).  This is the coarse stand-in for
+    // the vendor's per-opcode `RISCV::getCTPseudoInfoBy{BF16,Half}` tables.
+    if (ElemTy->isBFloatTy())
+      NF->addFnAttr("tx8-simt-bf16-fmt");
     ToErase.push_back(CI);
   }
 
