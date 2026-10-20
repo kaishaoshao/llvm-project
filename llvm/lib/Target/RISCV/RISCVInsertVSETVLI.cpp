@@ -1089,6 +1089,31 @@ void RISCVInsertVSETVLI::insertVSETVLI(MachineBasicBlock &MBB,
     }
   }
 
+  if (Info.hasAVLImm() && ST->hasVendorXTsm82s()) {
+    // TX8/xtsm82s has no vsetivli: the custom-3 (0x7b) encoding only carries
+    // the vsetvli shape, and the MC layer rejects PseudoVSETIVLI outright
+    // ("vsetivli is not supported by TX8").  Materialise the AVL into a GPR
+    // and use the register form -- this is what the vendor backend does, its
+    // MIR after this pass being
+    //   %9:gprnox0 = ADDI killed $x0, 4
+    //   dead $x0 = PseudoVSETVLI %9:gprnox0, 208, ...
+    Register AVLReg = MRI->createVirtualRegister(&RISCV::GPRNoX0RegClass);
+    MachineInstrBuilder AddiMI =
+        BuildMI(MBB, InsertPt, DL, TII->get(RISCV::ADDI), AVLReg)
+            .addReg(RISCV::X0, RegState::Kill)
+            .addImm(Info.getAVLImm());
+    auto MI = BuildMI(MBB, InsertPt, DL, TII->get(RISCV::PseudoVSETVLI))
+                  .addReg(RISCV::X0, RegState::Define | RegState::Dead)
+                  .addReg(AVLReg)
+                  .addImm(Info.encodeVTYPE());
+    if (LIS) {
+      LIS->InsertMachineInstrInMaps(*AddiMI);
+      LIS->InsertMachineInstrInMaps(*MI);
+      LIS->createAndComputeVirtRegInterval(AVLReg);
+    }
+    return;
+  }
+
   if (Info.hasAVLImm()) {
     auto MI = BuildMI(MBB, InsertPt, DL, TII->get(RISCV::PseudoVSETIVLI))
                   .addReg(RISCV::X0, RegState::Define | RegState::Dead)
