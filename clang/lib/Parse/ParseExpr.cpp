@@ -37,6 +37,7 @@
 #include "clang/Sema/SemaObjC.h"
 #include "clang/Sema/SemaOpenACC.h"
 #include "clang/Sema/SemaOpenMP.h"
+#include "clang/Sema/SemaRAISA.h"
 #include "clang/Sema/SemaSYCL.h"
 #include "clang/Sema/TypoCorrection.h"
 #include "llvm/ADT/SmallVector.h"
@@ -1826,8 +1827,12 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
         }
 
         if (!LHS.isInvalid()) {
-          ExprResult ECResult = Actions.CUDA().ActOnExecConfigExpr(
-              getCurScope(), OpenLoc, ExecConfigExprs, CloseLoc);
+          ExprResult ECResult =
+              getLangOpts().RAISA
+                  ? Actions.RAISA().ActOnExecConfigExpr(
+                        getCurScope(), OpenLoc, ExecConfigExprs, CloseLoc)
+                  : Actions.CUDA().ActOnExecConfigExpr(
+                        getCurScope(), OpenLoc, ExecConfigExprs, CloseLoc);
           if (ECResult.isInvalid())
             LHS = ExprError();
           else
