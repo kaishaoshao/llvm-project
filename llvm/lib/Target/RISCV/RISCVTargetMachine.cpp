@@ -142,6 +142,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   initializeRISCVVectorPeepholePass(*PR);
   initializeRISCVVLOptimizerPass(*PR);
   initializeTX8InsertXFRMPass(*PR);
+  initializeTX8TransformSIMTToSIMDPass(*PR);
   initializeRISCVVMV0EliminationPass(*PR);
   initializeRISCVInsertVSETVLIPass(*PR);
   initializeRISCVInsertReadWriteCSRPass(*PR);
@@ -163,6 +164,13 @@ static StringRef computeDataLayout(const Triple &TT,
   if (TT.isArch64Bit()) {
     if (ABIName == "lp64e")
       return "e-m:e-p:64:64-i64:64-i128:128-n32:64-S64";
+
+    // RAISA device targets: the fork's RPU layout (32-bit GEP index, 32-bit
+    // pointers in AS3/AS4, allocas in AS5).  Must match
+    // clang/lib/Basic/Targets/RISCV.h exactly.
+    if (TT.isRaisa())
+      return "e-m:e-p:64:64:64:32-p3:32:32:32:32-p4:32:32:32:32-"
+             "i64:64-i128:128-n32:64-S128-A5";
 
     // RAISA device targets: the fork's RPU layout (32-bit GEP index, 32-bit
     // pointers in AS3/AS4, allocas in AS5).  Must match
@@ -490,6 +498,15 @@ void RISCVPassConfig::addIRPasses() {
   }
 
   TargetPassConfig::addIRPasses();
+
+  // RAISA device kernels: consume the SIMT intrinsics (`llvm.riscv.read.reg.*`,
+  // `llvm.riscv.raisa.*`, `get.pred.mask`) and rewrite them into upstream RVV
+  // intrinsics.  Pass name `simt2simd` -- the same name the vendor's pipeline
+  // uses, so `-print-before/after=simt2simd` works.  Runs last in the IR
+  // pipeline, which is where the vendor's pass sits (its `before` IR is the
+  // fully optimised module).
+  if (TM->getTargetTriple().isRaisa())
+    addPass(createTX8TransformSIMTToSIMDPass());
 }
 
 bool RISCVPassConfig::addPreISel() {

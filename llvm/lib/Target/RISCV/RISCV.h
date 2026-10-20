@@ -20,6 +20,7 @@
 namespace llvm {
 class FunctionPass;
 class InstructionSelector;
+class ModulePass;
 class PassRegistry;
 class RISCVRegisterBankInfo;
 class RISCVSubtarget;
@@ -119,6 +120,9 @@ void initializeRISCVVMV0EliminationPass(PassRegistry &);
 
 FunctionPass *createTX8InsertXFRMPass();
 void initializeTX8InsertXFRMPass(PassRegistry &);
+
+ModulePass *createTX8TransformSIMTToSIMDPass();
+void initializeTX8TransformSIMTToSIMDPass(PassRegistry &);
 
 FunctionPass *createTX8RegisterRenamePass();
 void initializeTX8RegisterRenamePass(PassRegistry &);
