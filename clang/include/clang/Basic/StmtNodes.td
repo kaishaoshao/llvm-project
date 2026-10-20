@@ -194,6 +194,9 @@ def ObjCAvailabilityCheckExpr : StmtNode<Expr>;
 // Obj-C ARC Expressions.
 def ObjCBridgedCastExpr : StmtNode<ExplicitCastExpr>;
 
+// RAISA Expressions.
+def RAISAKernelCallExpr : StmtNode<CallExpr>;
+
 // CUDA Expressions.
 def CUDAKernelCallExpr : StmtNode<CallExpr>;
 
