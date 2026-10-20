@@ -544,20 +544,45 @@ void RISCVPassConfig::addIRPasses() {
     // the loop passes and *before* `simt2simd`, which `-mllvm
     // -print-before=config-instr-opt -mllvm -print-before=simt2simd` confirms.
     addPass(createTX8OptimizeConfigInstrsPass());
-    // The vendor's `-mllvm -debug-pass=Structure` order is
-    //   ... -structurizecfg -loops -cycles -uniformity
+    // The vendor's `-mllvm -debug-pass=Structure` order (verbatim) is
+    //   ... -rpu-unify-divergent-exit-nodes -domtree -cycles -fix-irreducible
+    //   -loops -unify-loop-exits -postdomtree -domfrontier -regions
+    //   -structurizecfg -loops -cycles -uniformity
     //   -tx8-annotate-control-flow -simt2simd -domtree -early-cse
     //   -rpu-lower-shared ...
-    // i.e. the control-flow annotation runs immediately before `simt2simd`.
-    // It has to: `simt2simd` may only vectorise kernels whose branches are
-    // uniform, and the annotation is what turns a lane-dependent `br` into a
-    // `raisa.divergent` query.  (`rpu-unify-divergent-exit-nodes` and
-    // `structurizecfg`, which the vendor runs just before it, are MIR/IR
-    // no-ops for every cell of the round-2 corpus -- verified with
-    // `-print-before=rpu-unify-divergent-exit-nodes` /
-    // `-print-before=structurizecfg` / `-print-before=tx8-annotate-control-flow`
-    // on `control_nested` and `control_early_return` -- so they are not
-    // ported.)
+    // i.e. a verbatim copy of the AMDGPU divergence stack
+    // (`AMDGPUUnifyDivergentExitNodes`, `FixIrreducible`, `UnifyLoopExits`,
+    // `StructurizeCFG`, `SIAnnotateControlFlow`), with only the annotation pass
+    // replaced by the fork's own.
+    //
+    // `structurizecfg` is *not* optional: `simt2simd` only vectorises kernels
+    // whose regions have been structurized into a single exit, and the
+    // annotation pass merely *follows* whatever CFG it is handed (a region is
+    // closed by emitting `set.exec` at the block that was pushed).  Without it
+    // the two `control_*_loop` cells keep their multi-exit CFG, the annotation
+    // puts its `set.exec` in the loop body instead of in the vendor's `Flow`
+    // blocks, `simt2simd` bails and the surviving `llvm.riscv.read.reg.*` kills
+    // ISel ("Don't know how to custom type legalize this intrinsic!").
+    // Evidence: vendor `-print-before/after=structurizecfg` vs our
+    // `-print-after=tx8-annotate-control-flow` dumps on those two cells.
+    //
+    // The three passes the vendor runs *before* it are pure no-ops on every
+    // multi-block cell of the corpus (vendor `-print-before/after` of
+    // `rpu-unify-divergent-exit-nodes`, `fix-irreducible` and
+    // `unify-loop-exits` on `control_divergent_loop`, `control_uniform_loop`,
+    // `control_nested` and `control_early_return`: every dump is byte-identical
+    // to its input), so they stay unported.  (The note that used to be here
+    // claimed `structurizecfg` itself was a no-op; that was measured on
+    // `control_nested`/`control_early_return` only, whose regions have a single
+    // exit to begin with.)
+    //
+    // Blast radius is structural, not sampled: upstream `StructurizeCFG::run`
+    // returns immediately for the top-level region, so a single-basic-block
+    // kernel cannot be touched.  Exactly 4 of the 114 `.rc` cells have more
+    // than one basic block before `simt2simd` (the two `control_*_loop` cells,
+    // `control_nested`, `control_early_return`); the other 110 are single-BB
+    // and therefore provably unaffected.
+    addPass(createStructurizeCFGPass());
     addPass(createTX8AnnotateControlFlowLegacyPass());
     addPass(createTX8TransformSIMTToSIMDPass());
     // The vendor's pipeline runs `-domtree -early-cse` between `simt2simd` and
