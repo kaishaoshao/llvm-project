@@ -219,6 +219,7 @@ LANGOPT(OpenCLPipes              , 1, 0, NotCompatible, "OpenCL pipes language c
 LANGOPT(NativeHalfType    , 1, 0, NotCompatible, "Native half type support")
 LANGOPT(NativeHalfArgsAndReturns, 1, 0, NotCompatible, "Native half args and returns")
 LANGOPT(CUDA              , 1, 0, NotCompatible, "CUDA")
+LANGOPT(RAISA              , 1, 0, NotCompatible, "RAISA")
 LANGOPT(HIP               , 1, 0, NotCompatible, "HIP")
 LANGOPT(OpenMP            , 32, 0, NotCompatible, "OpenMP support and version of OpenMP (31, 40 or 45)")
 LANGOPT(OpenMPExtensions  , 1, 1, NotCompatible, "Enable all Clang extensions for OpenMP directives and clauses")
@@ -252,6 +253,14 @@ LANGOPT(GPUDeviceApproxTranscendentals, 1, 0, NotCompatible, "using approximate 
 LANGOPT(GPURelocatableDeviceCode, 1, 0, NotCompatible, "generate relocatable device code")
 LANGOPT(OffloadImplicitHostDeviceTemplates, 1, 0, NotCompatible, "assume template functions to be implicitly host device by default for CUDA/HIP")
 LANGOPT(GPUAllowDeviceInit, 1, 0, NotCompatible, "allowing device side global init functions for HIP")
+
+LANGOPT(RAISAIsDevice    , 1, 0, NotCompatible, "compiling for RAISA device")
+LANGOPT(RAISAAllowVariadicFunctions, 1, 0, NotCompatible, "allowing variadic functions in RAISA device code")
+LANGOPT(RAISAHostDeviceConstexpr, 1, 1, NotCompatible, "treating unattributed constexpr functions as __host__ __device__")
+LANGOPT(RPUDeviceApproxTranscendentals, 1, 0, NotCompatible, "using approximate transcendental functions")
+LANGOPT(RPURelocatableDeviceCode, 1, 0, NotCompatible, "generate relocatable device code")
+LANGOPT(RPUAllowDeviceInit, 1, 0, NotCompatible, "allowing device side global init functions for RAISA")
+
 LANGOPT(GPUMaxThreadsPerBlock, 32, 1024, NotCompatible, "default max threads per block for kernel launch bounds for HIP")
 LANGOPT(GPUDeferDiag, 1, 0, NotCompatible, "defer host/device related diagnostic messages for CUDA/HIP")
 LANGOPT(GPUExcludeWrongSideOverloads, 1, 0, NotCompatible, "always exclude wrong side overloads in overloading resolution for CUDA/HIP")
@@ -263,6 +272,9 @@ LANGOPT(SYCLIsHost        , 1, 0, NotCompatible, "SYCL host compilation")
 ENUM_LANGOPT(SYCLVersion  , SYCLMajorVersion, 2, SYCL_None, NotCompatible, "Version of the SYCL standard used")
 
 LANGOPT(HIPUseNewLaunchAPI, 1, 0, NotCompatible, "Use new kernel launching API for HIP")
+
+LANGOPT(RAISAUseNewLaunchAPI, 1, 0, NotCompatible, "Use new kernel launching API for RAISA")
+
 LANGOPT(OffloadUniformBlock, 1, 0, NotCompatible, "Assume that kernels are launched with uniform block sizes (default true for CUDA/HIP and false otherwise)")
 LANGOPT(HIPStdPar, 1, 0, NotCompatible, "Enable Standard Parallel Algorithm Acceleration for HIP (experimental)")
 LANGOPT(HIPStdParInterposeAlloc, 1, 0, NotCompatible, "Replace allocations / deallocations with HIP RT calls when Standard Parallel Algorithm Acceleration for HIP is enabled (Experimental)")

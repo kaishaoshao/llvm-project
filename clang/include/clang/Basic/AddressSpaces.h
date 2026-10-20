@@ -44,6 +44,13 @@ enum class LangAS : unsigned {
   cuda_constant,
   cuda_shared,
 
+  // RAISA specific address spaces.
+  raisa_generic,
+  raisa_gmem,
+  raisa_l1shared,
+  raisa_l0ashared,
+  raisa_l0wshared,
+
   // SYCL specific address spaces.
   sycl_global,
   sycl_global_device,

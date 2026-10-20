@@ -139,7 +139,7 @@ public:
              cast<FunctionTemplateDecl>(getDecl())
                  ->getTemplatedDecl()
                  ->hasAttr<CUDAGlobalAttr>())) &&
-           "Decl is not a GPU kernel!");
+           "Decl is not a GPU/RPU kernel!");
 
     return static_cast<KernelReferenceKind>(Value.getInt());
   }
@@ -164,7 +164,8 @@ public:
   }
 
   static KernelReferenceKind getDefaultKernelReference(const FunctionDecl *D) {
-    return (D->hasAttr<DeviceKernelAttr>() || D->getLangOpts().CUDAIsDevice)
+    return (D->hasAttr<DeviceKernelAttr>() || D->getLangOpts().CUDAIsDevice ||
+            D->getLangOpts().RAISAIsDevice)
                ? KernelReferenceKind::Kernel
                : KernelReferenceKind::Stub;
   }

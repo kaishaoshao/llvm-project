@@ -255,7 +255,7 @@ PUNCTUATOR(coloncolon,          "::")
 // Objective C support.
 PUNCTUATOR(at,                  "@")
 
-// CUDA support.
+// CUDA/RAISA support.
 PUNCTUATOR(lesslessless,          "<<<")
 PUNCTUATOR(greatergreatergreater, ">>>")
 
@@ -653,8 +653,13 @@ KEYWORD(pipe                        , KEYOPENCLC | KEYOPENCLCXX)
 // C++ for OpenCL s2.3.1: addrspace_cast operator
 KEYWORD(addrspace_cast              , KEYOPENCLCXX)
 
-// CUDA/HIP function attributes
-KEYWORD(__noinline__                , KEYCUDA)
+// CUDA/HIP/RAISA function attributes
+KEYWORD(__noinline__                , KEYCUDA | KEYRAISA)
+
+KEYWORD(__gmem__                    , KEYRAISA)
+KEYWORD(__L1shared__                , KEYRAISA)
+KEYWORD(__L0Ashared__               , KEYRAISA)
+KEYWORD(__L0Wshared__               , KEYRAISA)
 
 // HLSL keywords.
 KEYWORD(cbuffer                     , KEYHLSL)

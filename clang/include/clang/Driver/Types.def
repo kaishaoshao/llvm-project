@@ -57,6 +57,10 @@ TYPE("objc++-cpp-output",        PP_ObjCXX_Alias, INVALID,      "mii",    phases
 TYPE("objective-c++",            ObjCXX,       PP_ObjCXX,       "mm",     phases::Preprocess, phases::Compile, phases::Backend, phases::Assemble, phases::Link)
 TYPE("hlsl",                     HLSL,         PP_CXX,          "hlsl",   phases::Preprocess, phases::Compile, phases::Backend, phases::Assemble)
 
+TYPE("raisa-cpp-output",          PP_RAISA,        INVALID,     "rci",    phases::Compile, phases::Backend, phases::Assemble, phases::Link)
+TYPE("raisa",                     RAISA,           PP_RAISA,    "rc",     phases::Preprocess, phases::Compile, phases::Backend, phases::Assemble, phases::Link)
+TYPE("raisa",                     RAISA_DEVICE,    PP_RAISA,    "rc",     phases::Preprocess, phases::Compile, phases::Backend, phases::Assemble, phases::Link)
+
 // C family input files to precompile.
 TYPE("c-header-cpp-output",      PP_CHeader,   INVALID,         "i",      phases::Precompile)
 TYPE("c-header",                 CHeader,      PP_CHeader,      "h",      phases::Preprocess, phases::Precompile)
@@ -118,6 +122,7 @@ TYPE("dSYM",                     dSYM,         INVALID,         "dSYM",   phases
 TYPE("dependencies",             Dependencies, INVALID,         "d",      phases::Compile, phases::Backend, phases::Assemble, phases::Link)
 TYPE("cuda-fatbin",              CUDA_FATBIN,  INVALID,         "fatbin", phases::Compile, phases::Backend, phases::Assemble, phases::Link)
 TYPE("hip-fatbin",               HIP_FATBIN,   INVALID,         "hipfb",  phases::Compile, phases::Backend, phases::Assemble, phases::Link)
+TYPE("raisa-fatbin",             RAISA_FATBIN,  INVALID,        "txbin",  phases::Compile, phases::Backend, phases::Assemble, phases::Link)
 TYPE("api-information",          API_INFO,     INVALID,         "json",   phases::Precompile)
 TYPE("dx-container",             DX_CONTAINER, INVALID,         "dxo",    phases::Compile, phases::Backend)
 TYPE("none",                     Nothing,      INVALID,         nullptr,  phases::Compile, phases::Backend, phases::Assemble, phases::Link)

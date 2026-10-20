@@ -266,6 +266,43 @@ public:
   }
 };
 
+/// Represents a call to a RAISA kernel function.
+class RAISAKernelCallExpr final : public CallExpr {
+  friend class ASTStmtReader;
+
+  enum { CONFIG, END_PREARG };
+
+  // RAISAKernelCallExpr has some trailing objects belonging
+  // to CallExpr. See CallExpr for the details.
+
+  RAISAKernelCallExpr(Expr *Fn, CallExpr *Config, ArrayRef<Expr *> Args,
+                     QualType Ty, ExprValueKind VK, SourceLocation RP,
+                     FPOptionsOverride FPFeatures, unsigned MinNumArgs);
+
+  RAISAKernelCallExpr(unsigned NumArgs, bool HasFPFeatures, EmptyShell Empty);
+
+public:
+  static RAISAKernelCallExpr *Create(const ASTContext &Ctx, Expr *Fn,
+                                    CallExpr *Config, ArrayRef<Expr *> Args,
+                                    QualType Ty, ExprValueKind VK,
+                                    SourceLocation RP,
+                                    FPOptionsOverride FPFeatures,
+                                    unsigned MinNumArgs = 0);
+
+  static RAISAKernelCallExpr *CreateEmpty(const ASTContext &Ctx,
+                                         unsigned NumArgs, bool HasFPFeatures,
+                                         EmptyShell Empty);
+
+  const CallExpr *getConfig() const {
+    return cast_or_null<CallExpr>(getPreArg(CONFIG));
+  }
+  CallExpr *getConfig() { return cast_or_null<CallExpr>(getPreArg(CONFIG)); }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == RAISAKernelCallExprClass;
+  }
+};
+
 /// A rewritten comparison expression that was originally written using
 /// operator syntax.
 ///

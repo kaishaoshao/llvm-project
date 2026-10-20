@@ -1488,6 +1488,8 @@ class Sema;
     OverloadingResult ResultForBestCandidate(const iterator &Best);
     void CudaExcludeWrongSideCandidates(
         Sema &S, SmallVectorImpl<OverloadCandidate *> &Candidates);
+    void RaisaExcludeWrongSideCandidates(
+        Sema &S, SmallVectorImpl<OverloadCandidate *> &Candidates);
     OverloadingResult
     BestViableFunctionImpl(Sema &S, SourceLocation Loc,
                            OverloadCandidateSet::iterator &Best);

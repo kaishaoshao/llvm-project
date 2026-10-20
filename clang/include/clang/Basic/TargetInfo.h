@@ -1671,6 +1671,12 @@ public:
     return getLangASFromTargetAS(AS);
   }
 
+  /// Map from the address space field in builtin description strings to the
+  /// language address space.
+  virtual LangAS getRAISABuiltinAddressSpace(unsigned AS) const {
+    return getLangASFromTargetAS(AS);
+  }
+
   /// Return an AST address space which can be used opportunistically
   /// for constant global memory. It must be possible to convert pointers into
   /// this address space to LangAS::Default. If no such address space exists,

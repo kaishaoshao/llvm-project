@@ -259,6 +259,9 @@ LANGSTANDARD(hlsl202y, "hlsl202y",
              HLSL, "High Level Shader Language 202y",
              LineComment | HLSL | CPlusPlus | CPlusPlus11)
 
+// RAISA
+LANGSTANDARD(rc, "rc", RAISA, "TSingMicroInc",
+             LineComment | CPlusPlus | CPlusPlus11 | Digraphs)
 
 #undef LANGSTANDARD
 #undef LANGSTANDARD_ALIAS

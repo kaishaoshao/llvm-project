@@ -992,6 +992,8 @@ private:
   /// directly.
   SmallVector<GlobalDeclID, 2> CUDASpecialDeclRefs;
 
+  SmallVector<GlobalDeclID, 2> RAISASpecialDeclRefs;
+
   /// The floating point pragma option settings.
   SmallVector<uint64_t, 1> FPPragmaOptions;
 

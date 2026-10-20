@@ -61,7 +61,9 @@ ELF_RELOC(R_RISCV_TLSDESC_LOAD_LO12, 63)
 ELF_RELOC(R_RISCV_TLSDESC_ADD_LO12,  64)
 ELF_RELOC(R_RISCV_TLSDESC_CALL,      65)
 ELF_RELOC(R_RISCV_VENDOR,           191)
-ELF_RELOC(R_RISCV_CUSTOM192,        192)
+// Raisa extension:
+// 64-bit absolute address of the device global variable symbol's GOT entry used in .debug_info
+ELF_RELOC(R_RISCV_GOT64,            192)
 ELF_RELOC(R_RISCV_CUSTOM193,        193)
 ELF_RELOC(R_RISCV_CUSTOM194,        194)
 ELF_RELOC(R_RISCV_CUSTOM195,        195)

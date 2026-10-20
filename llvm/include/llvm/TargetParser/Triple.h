@@ -197,7 +197,12 @@ public:
     SUSE,
     OpenEmbedded,
     Intel,
+#ifdef __TSM_RISCV__
+    TSingMicro,   // 15
+    LastVendorType = TSingMicro
+#else
     LastVendorType = Intel
+#endif
   };
   enum OSType {
     UnknownOS,
@@ -243,7 +248,12 @@ public:
     LiteOS,
     Serenity,
     Vulkan, // Vulkan SPIR-V
+#ifdef __TSM_RISCV__
+    RAISA,   // TSingMicro RAISA
+    LastOSType = RAISA
+#else
     LastOSType = Vulkan
+#endif
   };
   enum EnvironmentType {
     UnknownEnvironment,
@@ -899,6 +909,13 @@ public:
   bool isNVPTX() const {
     return getArch() == Triple::nvptx || getArch() == Triple::nvptx64;
   }
+
+#ifdef __TSM_RISCV__
+  /// Tests whether the target is raisa.
+  bool isRaisa() const {
+    return getOS() == Triple::RAISA;
+  }
+#endif
 
   /// Tests whether the target is AMDGCN
   bool isAMDGCN() const { return getArch() == Triple::amdgcn; }

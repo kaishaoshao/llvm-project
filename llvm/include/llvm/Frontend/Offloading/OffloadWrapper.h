@@ -40,6 +40,11 @@ LLVM_ABI llvm::Error wrapCudaBinary(llvm::Module &M,
                                     EntryArrayTy EntryArray,
                                     llvm::StringRef Suffix = "",
                                     bool EmitSurfacesAndTextures = true);
+#ifdef __TSM_RISCV__
+LLVM_ABI llvm::Error wrapRaisaBinary(llvm::Module &M,
+                                    llvm::ArrayRef<char> Images,
+                                    EntryArrayTy EntryArray);
+#endif
 
 /// Wraps the input bundled image into the module \p M as global symbols and
 /// registers the images with the HIP runtime.

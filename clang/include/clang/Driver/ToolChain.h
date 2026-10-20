@@ -779,6 +779,10 @@ public:
   virtual Expected<SmallVector<std::string>>
   getSystemGPUArchs(const llvm::opt::ArgList &Args) const;
 
+  /// getSystemRPUArchs - Use a tool to detect the user's availible RPUs.
+  virtual Expected<SmallVector<std::string>>
+  getSystemRPUArchs(const llvm::opt::ArgList &Args) const;
+
   /// addProfileRTLibs - When -fprofile-instr-profile is specified, try to pass
   /// a suitable profile runtime library to the linker.
   virtual void addProfileRTLibs(const llvm::opt::ArgList &Args,
@@ -786,6 +790,10 @@ public:
 
   /// Add arguments to use system-specific CUDA includes.
   virtual void AddCudaIncludeArgs(const llvm::opt::ArgList &DriverArgs,
+                                  llvm::opt::ArgStringList &CC1Args) const;
+
+  /// Add arguments to use system-specific RAISA includes.
+  virtual void AddRaisaIncludeArgs(const llvm::opt::ArgList &DriverArgs,
                                   llvm::opt::ArgStringList &CC1Args) const;
 
   /// Add arguments to use system-specific HIP includes.
@@ -846,6 +854,8 @@ public:
         return llvm::Triple("nvptx64-nvidia-cuda");
       if (TT.isAMDGCN())
         return llvm::Triple("amdgcn-amd-amdhsa");
+      if (TT.isRaisa())
+        return llvm::Triple("riscv64-tsingmicro-raisa");
     }
     return TT;
   }

@@ -46,6 +46,20 @@ inline bool DeclAttrsMatchCUDAMode(const LangOptions &LangOpts, Decl *D) {
   return isDeviceSideDecl == LangOpts.CUDAIsDevice;
 }
 
+// Helper function to check whether D's attributes match current RAISA mode.
+// Decls with mismatched attributes and related diagnostics may have to be
+// ignored during this RAISA compilation pass.
+inline bool DeclAttrsMatchRAISAMode(const LangOptions &LangOpts, Decl *D) {
+  if (!LangOpts.RAISA || !D)
+    return true;
+  bool isDeviceSideDecl = D->hasAttr<CUDADeviceAttr>() ||
+                          D->hasAttr<RAISAL1SharedAttr>() ||
+                          D->hasAttr<RAISAL0ASharedAttr>() ||
+                          D->hasAttr<RAISAL0WSharedAttr>() ||
+                          D->hasAttr<CUDAGlobalAttr>();
+  return isDeviceSideDecl == LangOpts.RAISAIsDevice;
+}
+
 /// Return a DLL attribute from the declaration.
 inline InheritableAttr *getDLLAttr(Decl *D) {
   assert(!(D->hasAttr<DLLImportAttr>() && D->hasAttr<DLLExportAttr>()) &&

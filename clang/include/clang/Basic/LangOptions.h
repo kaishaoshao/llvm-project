@@ -860,7 +860,7 @@ public:
 
   /// True when compiling for an offloading target device.
   bool isTargetDevice() const {
-    return OpenMPIsTargetDevice || CUDAIsDevice || SYCLIsDevice;
+    return OpenMPIsTargetDevice || CUDAIsDevice || RAISAIsDevice || SYCLIsDevice;
   }
 };
 

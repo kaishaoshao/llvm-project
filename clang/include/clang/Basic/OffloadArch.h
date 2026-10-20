@@ -106,15 +106,27 @@ enum class OffloadArch {
   GRANITERAPIDS,
   // Intel GPUs
   BMG_G21,
+#ifdef __TSM_RISCV__
+  TSM_X82,
+#endif
   LAST,
 
   CudaDefault = OffloadArch::SM_52,
   HIPDefault = OffloadArch::GFX906,
+#ifdef __TSM_RISCV__
+  RaisaDefault = OffloadArch::TSM_X82,
+#endif
 };
 
 static inline bool IsNVIDIAOffloadArch(OffloadArch A) {
   return A >= OffloadArch::SM_20 && A < OffloadArch::GFX600;
 }
+
+#ifdef __TSM_RISCV__
+static inline bool IsTSRPUOffloadArch(OffloadArch A) {
+  return A >= OffloadArch::TSM_X82 && A <= OffloadArch::TSM_X82;
+}
+#endif
 
 static inline bool IsAMDOffloadArch(OffloadArch A) {
   // Generic processor model is for testing only.

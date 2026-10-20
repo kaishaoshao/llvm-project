@@ -37,7 +37,10 @@ enum OffloadKind : uint16_t {
   OFK_Cuda = (1 << 1),
   OFK_HIP = (1 << 2),
   OFK_SYCL = (1 << 3),
-  OFK_LAST = (1 << 4),
+#ifdef __TSM_RISCV__
+  OFK_Raisa = (1 << 4),
+#endif
+  OFK_LAST = (1 << 5),
 };
 
 /// The type of contents the offloading image contains.
@@ -46,6 +49,9 @@ enum ImageKind : uint16_t {
   IMG_Object,
   IMG_Bitcode,
   IMG_Cubin,
+#ifdef __TSM_RISCV__
+  IMG_Txbin,
+#endif
   IMG_Fatbinary,
   IMG_PTX,
   IMG_LAST,

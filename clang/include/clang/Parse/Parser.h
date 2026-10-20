@@ -2326,6 +2326,7 @@ private:
   void ParseOpenCLQualifiers(ParsedAttributes &Attrs);
   void ParseNullabilityTypeSpecifiers(ParsedAttributes &attrs);
   void ParseCUDAFunctionAttributes(ParsedAttributes &attrs);
+  void ParseRAISAFunctionAttributes(ParsedAttributes &attrs);
   bool isHLSLQualifier(const Token &Tok) const;
   void ParseHLSLQualifiers(ParsedAttributes &Attrs);
 
@@ -7025,8 +7026,12 @@ private:
   std::unique_ptr<PragmaHandler> MSFenvAccess;
   std::unique_ptr<PragmaHandler> MSAllocText;
   std::unique_ptr<PragmaHandler> CUDAForceHostDeviceHandler;
+  std::unique_ptr<PragmaHandler> RAISAForceHostDeviceHandler;
   std::unique_ptr<PragmaHandler> OptimizeHandler;
   std::unique_ptr<PragmaHandler> LoopHintHandler;
+#ifdef __TSM_RISCV__
+  std::unique_ptr<PragmaHandler> RaisaLoopHintHandler;
+#endif
   std::unique_ptr<PragmaHandler> UnrollHintHandler;
   std::unique_ptr<PragmaHandler> NoUnrollHintHandler;
   std::unique_ptr<PragmaHandler> UnrollAndJamHintHandler;

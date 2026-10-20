@@ -323,6 +323,10 @@ public:
   /// CUDA runtime back-end for incorporating them into host-side object file.
   std::string CudaGpuBinaryFileName;
 
+  /// Name of file passed with -fraisa-include-npubinary option to forward to
+  /// RAISA runtime back-end for incorporating them into host-side object file.
+  std::string RaisaRpuBinaryFileName;
+
   /// List of filenames passed in using the -fembed-offload-object option. These
   /// are offloading binaries containing device images and metadata.
   std::vector<std::string> OffloadObjects;

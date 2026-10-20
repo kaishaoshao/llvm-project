@@ -452,6 +452,9 @@ class ASTContext : public RefCountedBase<ASTContext> {
   /// Declaration for the CUDA cudaConfigureCall function.
   FunctionDecl *cudaConfigureCallDecl = nullptr;
 
+  /// Declaration for the RAISA raisaConfigureCall function.
+  FunctionDecl *raisaConfigureCallDecl = nullptr;
+
   /// Keeps track of all declaration attributes.
   ///
   /// Since so few decls have attrs, we keep them in a hash map instead of
@@ -753,6 +756,20 @@ public:
       Ctx_.CUDAConstantEvalCtx.NoWrongSidedVars = NoWrongSidedVars;
     }
     ~CUDAConstantEvalContextRAII() { Ctx.CUDAConstantEvalCtx = SavedCtx; }
+  };
+
+  struct RAISAConstantEvalContext {
+    /// Do not allow wrong-sided variables in constant expressions.
+    bool NoWrongSidedVars = false;
+  } RAISAConstantEvalCtx;
+  struct RAISAConstantEvalContextRAII {
+    ASTContext &Ctx;
+    RAISAConstantEvalContext SavedCtx;
+    RAISAConstantEvalContextRAII(ASTContext &Ctx_, bool NoWrongSidedVars)
+        : Ctx(Ctx_), SavedCtx(Ctx_.RAISAConstantEvalCtx) {
+      Ctx_.RAISAConstantEvalCtx.NoWrongSidedVars = NoWrongSidedVars;
+    }
+    ~RAISAConstantEvalContextRAII() { Ctx.RAISAConstantEvalCtx = SavedCtx; }
   };
 
   /// Returns the dynamic AST node parent map context.
@@ -1297,6 +1314,12 @@ public:
   /// in device compilation.
   llvm::DenseSet<const FunctionDecl *> CUDAImplicitHostDeviceFunUsedByDevice;
 
+#ifdef __TSM_RISCV__
+  llvm::DenseSet<const VarDecl *> RAISADeviceVarODRUsedByHost;
+  llvm::SetVector<const ValueDecl *> RAISAExternalDeviceDeclODRUsedByHost;
+  llvm::DenseSet<const FunctionDecl *> RAISAImplicitHostDeviceFunUsedByDevice;
+#endif
+
   /// Map of SYCL kernels indexed by the unique type used to name the kernel.
   /// Entries are not serialized but are recreated on deserialization of a
   /// sycl_kernel_entry_point attributed function declaration.
@@ -1587,8 +1610,16 @@ public:
     cudaConfigureCallDecl = FD;
   }
 
+  void setraisaConfigureCallDecl(FunctionDecl *FD) {
+    raisaConfigureCallDecl = FD;
+  }
+
   FunctionDecl *getcudaConfigureCallDecl() {
     return cudaConfigureCallDecl;
+  }
+
+  FunctionDecl *getraisaConfigureCallDecl() {
+    return raisaConfigureCallDecl;
   }
 
   /// Returns true iff we need copy/dispose helpers for the given type.

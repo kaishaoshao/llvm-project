@@ -8271,6 +8271,15 @@ AST_MATCHER_P(ReturnStmt, hasReturnValue, internal::Matcher<Expr>,
 extern const internal::VariadicDynCastAllOfMatcher<Stmt, CUDAKernelCallExpr>
     cudaKernelCallExpr;
 
+/// Matches RAISA kernel call expression.
+///
+/// Example matches,
+/// \code
+///   kernel<<<i, j>>>();
+/// \endcode
+extern const internal::VariadicDynCastAllOfMatcher<Stmt, RAISAKernelCallExpr>
+    raisaKernelCallExpr;
+
 /// Matches expressions that resolve to a null pointer constant, such as
 /// GNU's __null, C++11's nullptr, or C's NULL macro.
 ///

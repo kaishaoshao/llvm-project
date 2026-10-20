@@ -742,6 +742,9 @@ enum ASTRecordTypes {
   UPDATE_MODULE_LOCAL_VISIBLE = 76,
 
   UPDATE_TU_LOCAL_VISIBLE = 77,
+
+  /// Record code for special RAISA declarations.
+  RAISA_SPECIAL_DECL_REFS = 78,
 };
 
 /// Record types used within a source manager block.
@@ -1924,6 +1927,9 @@ enum StmtCode {
 
   // CUDA
   EXPR_CUDA_KERNEL_CALL, // CUDAKernelCallExpr
+
+  // RAISA
+  EXPR_RAISA_KERNEL_CALL, // RAISAKernelCallExpr
 
   // OpenCL
   EXPR_ASTYPE, // AsTypeExpr

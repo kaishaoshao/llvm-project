@@ -37,6 +37,7 @@
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/CapturedStmt.h"
 #include "clang/Basic/Cuda.h"
+#include "clang/Basic/Raisa.h"
 #include "clang/Basic/DiagnosticSema.h"
 #include "clang/Basic/ExceptionSpecificationType.h"
 #include "clang/Basic/ExpressionTraits.h"
@@ -160,6 +161,7 @@ class SemaAVR;
 class SemaBPF;
 class SemaCodeCompletion;
 class SemaCUDA;
+class SemaRAISA;
 class SemaDirectX;
 class SemaHLSL;
 class SemaHexagon;
@@ -414,6 +416,8 @@ enum class TemplateDeductionResult {
   MiscellaneousDeductionFailure,
   /// CUDA Target attributes do not match.
   CUDATargetMismatch,
+  /// RAISA Target attributes do not match.
+  RAISATargetMismatch,
   /// Some error which was already diagnosed.
   AlreadyDiagnosed
 };
@@ -1431,6 +1435,11 @@ public:
     return *CUDAPtr;
   }
 
+  SemaRAISA &RAISA() {
+    assert(RAISAPtr);
+    return *RAISAPtr;
+  }
+
   SemaDirectX &DirectX() {
     assert(DirectXPtr);
     return *DirectXPtr;
@@ -1574,6 +1583,7 @@ private:
   std::unique_ptr<SemaBPF> BPFPtr;
   std::unique_ptr<SemaCodeCompletion> CodeCompletionPtr;
   std::unique_ptr<SemaCUDA> CUDAPtr;
+  std::unique_ptr<SemaRAISA> RAISAPtr;
   std::unique_ptr<SemaDirectX> DirectXPtr;
   std::unique_ptr<SemaHLSL> HLSLPtr;
   std::unique_ptr<SemaHexagon> HexagonPtr;
@@ -4704,18 +4714,19 @@ public:
                             SourceLocation WeakNameLoc,
                             SourceLocation AliasNameLoc);
 
-  /// Status of the function emission on the CUDA/HIP/OpenMP host/device attrs.
+  /// Status of the function emission on the CUDA/HIP/OpenMP/RAISA host/device attrs.
   enum class FunctionEmissionStatus {
     Emitted,
     CUDADiscarded,     // Discarded due to CUDA/HIP hostness
     OMPDiscarded,      // Discarded due to OpenMP hostness
     TemplateDiscarded, // Discarded due to uninstantiated templates
+    RAISADiscarded,     // Discarded due to RAISA hostness
     Unknown,
   };
   FunctionEmissionStatus getEmissionStatus(const FunctionDecl *Decl,
                                            bool Final = false);
 
-  // Whether the callee should be ignored in CUDA/HIP/OpenMP host/device check.
+  // Whether the callee should be ignored in CUDA/HIP/OpenMP/RAISA host/device check.
   bool shouldIgnoreInHostDeviceCheck(FunctionDecl *Callee);
 
   /// Function or variable declarations to be checked for whether the deferred
@@ -4995,6 +5006,18 @@ public:
   /// declaration.
   void AddLaunchBoundsAttr(Decl *D, const AttributeCommonInfo &CI,
                            Expr *MaxThreads, Expr *MinBlocks, Expr *MaxBlocks);
+
+  /// Create an RAISAClusterDimsAttr attribute.
+  RAISAClusterDimsAttr *CreateClusterDimsAttr(const AttributeCommonInfo &CI,
+                                             Expr *ClusterDimsX,
+                                             Expr *ClusterDimsY,
+                                             Expr *ClusterDimsZ);
+
+  /// AddClusterDimsAttr - Adds a launch_bounds attribute to a particular
+  /// declaration.
+  void AddClusterDimsAttr(Decl *D, const AttributeCommonInfo &CI,
+                          Expr *ClusterDimsX, Expr *ClusterDimsY,
+                          Expr *ClusterDimsZ);
 
   enum class RetainOwnershipKind { NS, CF, OS };
 
@@ -7422,6 +7445,10 @@ public:
                         ArrayRef<Expr *> Arg, SourceLocation RParenLoc,
                         Expr *Config = nullptr, bool IsExecConfig = false,
                         ADLCallKind UsesADL = ADLCallKind::NotADL);
+
+  ExprResult ActOnRAISAExecConfigExpr(Scope *S, SourceLocation LLLLoc,
+                                     MultiExprArg ExecConfig,
+                                     SourceLocation GGGLoc);
 
   ExprResult ActOnCastExpr(Scope *S, SourceLocation LParenLoc, Declarator &D,
                            ParsedType &Ty, SourceLocation RParenLoc,
