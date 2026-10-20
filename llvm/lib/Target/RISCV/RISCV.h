@@ -127,6 +127,14 @@ void initializeTX8TransformSIMTToSIMDPass(PassRegistry &);
 ModulePass *createTX8LowerSharedLegacyPass();
 void initializeTX8LowerSharedLegacyPass(PassRegistry &);
 
+// TX8BankAwareShared.cpp -- fork `bank-aware-shared`: places `l0ashared` (AS3)
+// and `l0wshared` (AS4) globals into the tile-memory banks (128 KiB bank
+// stride, one bank per variable) and deletes them, before `rpu-lower-shared`.
+// Only inserted when `-riscv-bank-aware` is set (`isRISCVBankAware()`).
+ModulePass *createTX8BankAwareSharedLegacyPass();
+void initializeTX8BankAwareSharedLegacyPass(PassRegistry &);
+bool isRISCVBankAware();
+
 FunctionPass *createTX8OptimizeConfigInstrsPass();
 void initializeTX8OptimizeConfigInstrsPass(PassRegistry &);
 

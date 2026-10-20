@@ -157,6 +157,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   initializeTX8OptimizeConfigInstrsPass(*PR);
   initializeTX8AnnotateControlFlowLegacyPass(*PR);
   initializeTX8TransformSIMTToSIMDPass(*PR);
+  initializeTX8BankAwareSharedLegacyPass(*PR);
   initializeTX8LowerSharedLegacyPass(*PR);
   initializeRISCVVMV0EliminationPass(*PR);
   initializeRISCVInsertVSETVLIPass(*PR);
@@ -621,6 +622,15 @@ void RISCVPassConfig::addIRPasses() {
     // `rpu-lower-shared` input keeps both, which is what made
     // `mem_l1_size_*`'s register allocation differ from the vendor's.
     addPass(createEarlyCSEPass());
+    // ... and `-bank-aware-shared` immediately before `rpu-lower-shared`
+    // (vendor order: `-simt2simd -domtree -early-cse -bank-aware-shared
+    // -rpu-lower-shared`).  The vendor only inserts it when
+    // `-riscv-bank-aware` is set: without the flag its own
+    // `-debug-pass=Structure` lists `rpu-lower-shared` alone and
+    // `-print-after=bank-aware-shared` prints nothing, so the insertion is
+    // gated on the same option here.
+    if (isRISCVBankAware())
+      addPass(createTX8BankAwareSharedLegacyPass());
   }
 
   // RAISA device kernels: give every `__attribute__((l0ashared|l0wshared|

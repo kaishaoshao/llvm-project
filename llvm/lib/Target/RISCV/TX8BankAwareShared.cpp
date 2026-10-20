@@ -1,0 +1,357 @@
+//===-- TX8BankAwareShared.cpp - TX8 bank-aware shared allocation -----===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// Reconstruction of the vendor's `bank-aware-shared` pass (`TX8 Bank-Aware
+// Shared Memory Allocation`, class `TX8BankAwareSharedLegacy`, a ModulePass,
+// pass name `bank-aware-shared`).
+//
+// Where it sits (vendor `-mllvm -debug-pass=Structure`, verbatim):
+//
+//   ... -tx8-annotate-control-flow -simt2simd -domtree -early-cse
+//       -bank-aware-shared -rpu-lower-shared ...
+//
+// It is only *inserted* when `-riscv-bank-aware` is set: without the flag the
+// same `-debug-pass=Structure` run lists only `rpu-lower-shared`, and
+// `-print-after=bank-aware-shared` produces no dump at all.  (The option is
+// defined here, where the vendor defines it too -- RISCVTargetMachine.cpp --
+// and `RISCVPassConfig::addIRPasses` consults `isRISCVBankAware()`.)
+//
+// What it does, established from the vendor's own dumps of
+// `alloc_l0{a,w}shared_bank_on` (`-print-before/after=bank-aware-shared`, plus
+// six repeated runs to check determinism) and from the decompiled object
+// (`tools/re/out/TX8BankAwareShared/decompiled.c`):
+//
+//  1. Materialise every constant expression that transitively uses a shared
+//     global (`llvm::RPU::eliminateConstantExprUsesOfShared`, called first in
+//     `runOnModule`), for *all* address spaces.  The replacement performed in
+//     step 3 therefore lands inside plain `addrspacecast` instructions:
+//
+//       before:  %2 = lshr i64 ptrtoint (ptr addrspacecast (
+//                         ptr addrspace(3) @_ZZ...E1a to ptr) to i64), 32
+//       after:   %2 = addrspacecast ptr addrspace(3) inttoptr (
+//                         i32 1073741824 to ptr addrspace(3)) to ptr
+//                %3 = ptrtoint ptr %2 to i64
+//                %4 = lshr i64 %3, 32
+//
+//     Each use site gets its own expansion (no CSE), exactly as in the vendor.
+//
+//  2. Place every `l0ashared` (AS3) and `l0wshared` (AS4) global into the tile
+//     memory *banks*: the L0A window is 0x40000000 with 6 banks (0xc0000 of
+//     capacity), the L0W window is 0x40100000 with 2 banks (0x40000), and the
+//     bank stride is 128 KiB (`0x20000`).  A variable occupies
+//     `ceil(alignTo(alloc_size, align) / 0x20000)` consecutive banks and each
+//     variable in the corpus takes exactly one, so the observed layout is
+//     declaration order, one bank per variable:
+//
+//       alloc_l0ashared_bank_on: a -> 0x40000000, b -> 0x40020000
+//       alloc_l0wshared_bank_on: a -> 0x40100000, b -> 0x40120000
+//
+//     Measured (6/6 runs under `setarch -R`, the oracle's protocol) on the two
+//     corpus cells and on 2- and 3-variable probes (which also get one bank
+//     each, never packed into a single bank).  Over-capacity is a fatal error
+//     in the vendor and is mirrored here.
+//
+//  3. Replace each placed global with `inttoptr (i32 <address>)` (AS3/AS4 are
+//     32-bit pointers in the RAISA data layout) and delete it.  AS2 (L1
+//     shared) globals are *not* touched: the vendor keeps them and lets
+//     `rpu-lower-shared` place them, which is why `alloc_l1shared_bank_on`
+//     comes out identical with this pass merely materialising its constant
+//     expressions.
+//
+// Not modelled: the bank-*conflict* colouring solver in the vendor object
+// (`BankConflictColoringSolver`).  It is only reachable when a variable spans
+// more than one bank or when the per-variable bank demand overflows the
+// window -- neither occurs in the corpus, and the simple path above is the one
+// the vendor's own dumps take for every `.rc` cell.
+//
+// Ordering: the vendor collects the variables through a pointer-keyed
+// container and is deterministic only because the oracle disables ASLR; its
+// observed order under `setarch -R` is declaration order, which is what this
+// reconstruction uses.
+//
+//===----------------------------------------------------------------------===//
+
+#include "RISCV.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Pass.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
+#include "llvm/TargetParser/Triple.h"
+
+#include <algorithm>
+
+using namespace llvm;
+
+#define DEBUG_TYPE "bank-aware-shared"
+
+// The vendor defines this in RISCVTargetMachine.cpp and consumes it both for
+// the pass insertion and for the bank placement.  It is defined here so that
+// only one translation unit owns it; `isRISCVBankAware()` is what
+// RISCVTargetMachine.cpp reads.
+static cl::opt<bool> RISCVBankAware(
+    "riscv-bank-aware", cl::Hidden, cl::init(false),
+    cl::desc("Allocate RPU shared variables bank-aware"));
+
+bool llvm::isRISCVBankAware() { return RISCVBankAware; }
+
+namespace {
+
+/// Tile-memory bank geometry for one shared address space.
+struct BankSpaceConfig {
+  unsigned AddressSpace;
+  uint64_t Base;
+  unsigned Banks;
+};
+
+// L0A window: 0x40000000, 6 banks; L0W window: 0x40100000, 2 banks.  Bank
+// stride is 128 KiB for both (`uVar36 = 0x20000` in the vendor's
+// `processAddressSpace`; L0A: base 0x40000000 / capacity 0xc0000 / 6 banks,
+// L0W: base 0x40100000 / capacity 0x40000 / 2 banks).
+constexpr uint64_t BankStride = 0x20000;
+constexpr BankSpaceConfig BankSpaces[] = {
+    {3, 0x40000000ull, 6}, // l0ashared
+    {4, 0x40100000ull, 2}, // l0wshared
+};
+
+class TX8BankAwareSharedLegacy : public ModulePass {
+public:
+  static char ID;
+
+  TX8BankAwareSharedLegacy() : ModulePass(ID) {
+    initializeTX8BankAwareSharedLegacyPass(*PassRegistry::getPassRegistry());
+  }
+
+  StringRef getPassName() const override {
+    return "TX8 Bank-Aware Shared Memory Allocation";
+  }
+
+  bool runOnModule(Module &M) override;
+
+private:
+  bool isSharedVariableToLower(const GlobalVariable &GV) const;
+  bool materializeConstantExprUses(ArrayRef<GlobalVariable *> GVs);
+  void placeAddressSpace(Module &M, const BankSpaceConfig &Cfg,
+                         SmallVectorImpl<GlobalVariable *> &Lowered,
+                         DenseMap<GlobalVariable *, uint64_t> &Address);
+};
+
+} // end anonymous namespace
+
+char TX8BankAwareSharedLegacy::ID = 0;
+
+INITIALIZE_PASS(TX8BankAwareSharedLegacy, "bank-aware-shared",
+                "TX8 Bank-Aware Shared Memory Allocation", false, false)
+
+ModulePass *llvm::createTX8BankAwareSharedLegacyPass() {
+  return new TX8BankAwareSharedLegacy();
+}
+
+/// Same predicate as `rpu-lower-shared`: a kernel-scope
+/// `__attribute__((l0ashared|l0wshared|l1shared))` variable reaches this pass
+/// as an `internal addrspace(2|3|4) global`.
+bool TX8BankAwareSharedLegacy::isSharedVariableToLower(
+    const GlobalVariable &GV) const {
+  if (GV.isDeclaration())
+    return false;
+  unsigned AS = GV.getAddressSpace();
+  if (AS != 2 && AS != 3 && AS != 4)
+    return false;
+  if (!GV.hasLocalLinkage())
+    return false;
+  return true;
+}
+
+/// Expand a constant expression that transitively uses one of the shared
+/// globals into real instructions, bottom-up, in front of `InsertBefore`.
+/// Bottom-up order reproduces the vendor's value numbering (innermost cast
+/// first, outermost last, immediately before the instruction that used the
+/// folded expression).
+static Instruction *expandConstantExpr(ConstantExpr *CE,
+                                       Instruction *InsertBefore) {
+  Instruction *I = CE->getAsInstruction();
+  for (unsigned i = 0, e = I->getNumOperands(); i != e; ++i)
+    if (auto *OpCE = dyn_cast<ConstantExpr>(I->getOperand(i)))
+      I->setOperand(i, expandConstantExpr(OpCE, InsertBefore));
+  I->insertBefore(InsertBefore);
+  return I;
+}
+
+/// True if the constant transitively references any of `GVs`.
+static bool referencesAny(const Constant *C,
+                          const SmallPtrSetImpl<GlobalVariable *> &GVs) {
+  if (auto *GV = dyn_cast<GlobalVariable>(C))
+    return GVs.contains(const_cast<GlobalVariable *>(GV));
+  for (const Use &U : C->operands())
+    if (auto *OpC = dyn_cast<Constant>(U.get()))
+      if (referencesAny(OpC, GVs))
+        return true;
+  return false;
+}
+
+/// `eliminateConstantExprUsesOfShared`: one expansion per use site (the vendor
+/// does not CSE them -- the two operands of `lshr`/`vmv` on the same variable
+/// become two independent `addrspacecast` chains).
+bool TX8BankAwareSharedLegacy::materializeConstantExprUses(
+    ArrayRef<GlobalVariable *> GVs) {
+  if (GVs.empty())
+    return false;
+  SmallPtrSet<GlobalVariable *, 8> Set(GVs.begin(), GVs.end());
+
+  SmallPtrSet<Instruction *, 16> Candidates;
+  for (GlobalVariable *GV : GVs)
+    for (User *U : GV->users()) {
+      auto *CE = dyn_cast<ConstantExpr>(U);
+      if (!CE)
+        continue;
+      SmallVector<ConstantExpr *, 8> Stack{CE};
+      SmallPtrSet<ConstantExpr *, 8> Seen;
+      while (!Stack.empty()) {
+        ConstantExpr *Cur = Stack.pop_back_val();
+        if (!Seen.insert(Cur).second)
+          continue;
+        for (User *CU : Cur->users()) {
+          if (auto *Nested = dyn_cast<ConstantExpr>(CU))
+            Stack.push_back(Nested);
+          else if (auto *I = dyn_cast<Instruction>(CU))
+            Candidates.insert(I);
+        }
+      }
+    }
+  if (Candidates.empty())
+    return false;
+
+  bool Changed = false;
+  Module *M = GVs[0]->getParent();
+  for (Function &F : *M) {
+    if (F.isDeclaration())
+      continue;
+    for (BasicBlock &BB : F) {
+      for (Instruction &I : BB) {
+        if (!Candidates.contains(&I))
+          continue;
+        for (unsigned OpNo = 0, e = I.getNumOperands(); OpNo != e; ++OpNo) {
+          auto *CE = dyn_cast<ConstantExpr>(I.getOperand(OpNo));
+          if (!CE || !referencesAny(CE, Set))
+            continue;
+          Instruction *InsertBefore = &I;
+          if (auto *PHI = dyn_cast<PHINode>(&I))
+            InsertBefore = PHI->getIncomingBlock(OpNo)->getTerminator();
+          I.setOperand(OpNo, expandConstantExpr(CE, InsertBefore));
+          Changed = true;
+        }
+      }
+    }
+  }
+  return Changed;
+}
+
+/// Assign bank addresses to `Lowered` (which is in declaration order) for one
+/// address space.  One variable occupies `ceil(alignTo(size, align) / stride)`
+/// consecutive banks; the corpus only ever needs one bank per variable.
+void TX8BankAwareSharedLegacy::placeAddressSpace(
+    Module &M, const BankSpaceConfig &Cfg,
+    SmallVectorImpl<GlobalVariable *> &Lowered,
+    DenseMap<GlobalVariable *, uint64_t> &Address) {
+  const DataLayout &DL = M.getDataLayout();
+  SmallVector<GlobalVariable *, 8> Vars;
+  for (GlobalVariable *GV : Lowered)
+    if (GV->getAddressSpace() == Cfg.AddressSpace)
+      Vars.push_back(GV);
+  if (Vars.empty())
+    return;
+
+  // First pass: bank demand, with the vendor's two fatal errors.
+  uint64_t TotalBanks = 0;
+  for (GlobalVariable *GV : Vars) {
+    uint64_t Size = DL.getTypeAllocSize(GV->getValueType());
+    uint64_t Align = GV->getAlign().valueOrOne().value();
+    uint64_t Aligned = alignTo(std::max<uint64_t>(Size, 1), Align);
+    uint64_t Banks = (Aligned + BankStride - 1) / BankStride;
+    if (Banks > Cfg.Banks)
+      report_fatal_error("single shared variable exceeds L0 alloc capacity");
+    TotalBanks += Banks;
+  }
+  if (TotalBanks > Cfg.Banks)
+    report_fatal_error("shared variables exceed total L0 alloc capacity");
+
+  // Second pass: sequential bank assignment in declaration order.
+  uint64_t Cursor = 0;
+  for (GlobalVariable *GV : Vars) {
+    uint64_t Size = DL.getTypeAllocSize(GV->getValueType());
+    uint64_t Align = GV->getAlign().valueOrOne().value();
+    uint64_t Aligned = alignTo(std::max<uint64_t>(Size, 1), Align);
+    Address[GV] = Cfg.Base + Cursor * BankStride;
+    Cursor += (Aligned + BankStride - 1) / BankStride;
+  }
+  LLVM_DEBUG(dbgs() << "bank-aware-shared: AS" << Cfg.AddressSpace << ": "
+                    << Vars.size() << " variable(s), " << Cursor
+                    << " bank(s)\n");
+}
+
+bool TX8BankAwareSharedLegacy::runOnModule(Module &M) {
+  // The vendor only inserts this pass for RAISA (`isRaisa()`), and only when
+  // `-riscv-bank-aware` is on.  Both gates are repeated here so the pass is
+  // inert if it is ever added unconditionally.
+  if (!Triple(M.getTargetTriple()).isRaisa())
+    return false;
+  if (!RISCVBankAware)
+    return false;
+
+  const DataLayout &DL = M.getDataLayout();
+
+  // Step 1: materialise the constant-expression uses of every shared global,
+  // for all address spaces (the vendor's `eliminateConstantExprUsesOfShared`
+  // is unconditional).
+  SmallVector<GlobalVariable *, 8> AllShared;
+  for (GlobalVariable &GV : M.globals())
+    if (isSharedVariableToLower(GV))
+      AllShared.push_back(&GV);
+  if (AllShared.empty())
+    return false;
+  bool Changed = materializeConstantExprUses(AllShared);
+
+  // Step 2: bank placement for L0A (AS3) and L0W (AS4).  AS2 is deliberately
+  // left alone -- `rpu-lower-shared` places L1 shared variables.
+  DenseMap<GlobalVariable *, uint64_t> Address;
+  for (const BankSpaceConfig &Cfg : BankSpaces)
+    placeAddressSpace(M, Cfg, AllShared, Address);
+  // Even when no L0A/L0W variable exists (e.g. `alloc_l1shared_bank_on`, where
+  // only AS2 globals are present) the constant-expression materialisation above
+  // has already rewritten the module, so report the change.
+  if (Address.empty())
+    return Changed;
+
+  // Step 3: replace the placed globals with their `inttoptr` constant and
+  // delete them.  AS3/AS4 pointers are 32-bit in the RAISA data layout, which
+  // is the width of the `inttoptr` the vendor emits.
+  LLVMContext &Ctx = M.getContext();
+  for (GlobalVariable *GV : AllShared) {
+    auto It = Address.find(GV);
+    if (It == Address.end())
+      continue;
+    unsigned PtrBits = DL.getPointerSizeInBits(GV->getAddressSpace());
+    Constant *Replacement = ConstantExpr::getIntToPtr(
+        ConstantInt::get(Type::getIntNTy(Ctx, PtrBits), It->second),
+        GV->getType());
+    GV->replaceAllUsesWith(Replacement);
+    GV->eraseFromParent();
+  }
+  return true;
+}

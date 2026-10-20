@@ -60,14 +60,11 @@
 // identity is not a well-defined target for them), while single-variable cells
 // are byte-exact.
 //
-// `-riscv-bank-aware` lives in `RISCVTargetMachine.cpp` in the vendor (only
-// `RISCVTargetMachine.cpp.o` in the whole archive references the string).  It is
-// consumed *upstream* of this pass -- by `simt2simd` -- so for the four
-// `*_bank_on` cells of the corpus the pre-pass module already contains the
-// banked `inttoptr (i32 ...)` constants and no globals at all.  The option is
-// therefore defined here purely so that the command line parses (it was the
-// reason those four cells died with `Unknown command line argument
-// '-riscv-bank-aware=true'`); it has no effect on the variables this pass sees.
+// `-riscv-bank-aware` selects the separate `bank-aware-shared` pass, which runs
+// *before* this one (`TX8BankAwareShared.cpp`, which owns the option).  With the
+// flag on, the four `*_bank_on` cells reach this pass with their L0A/L0W globals
+// already replaced by banked `inttoptr (i32 ...)` constants, so there is nothing
+// left for `rpu-lower-shared` to place there.
 //
 //===----------------------------------------------------------------------===//
 
@@ -82,7 +79,6 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/TargetParser/Triple.h"
@@ -90,13 +86,6 @@
 using namespace llvm;
 
 #define DEBUG_TYPE "rpu-lower-shared"
-
-// The vendor defines this in RISCVTargetMachine.cpp; kept here so that the R2
-// line only touches RISCVTargetMachine.cpp at the two mandatory wiring points
-// (pass initialisation + insertion).  CLI behaviour is identical.
-static cl::opt<bool> RISCVBankAware(
-    "riscv-bank-aware", cl::Hidden, cl::init(false),
-    cl::desc("Allocate RPU shared variables bank-aware"));
 
 namespace {
 

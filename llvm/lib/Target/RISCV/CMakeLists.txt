@@ -68,6 +68,7 @@ add_llvm_target(RISCVCodeGen
   TX8InsertXFRM.cpp
   TX8LegalizeEXEC.cpp
   TX8TransformSIMTToSIMD.cpp
+  TX8BankAwareShared.cpp
   TX8LowerSharedPass.cpp
   TX8OptimizeConfigInstrs.cpp
   TX8RegisterRename.cpp
