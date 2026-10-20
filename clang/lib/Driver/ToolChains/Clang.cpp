@@ -120,6 +120,13 @@ forAllAssociatedToolChains(Compilation &C, const JobAction &JA,
   } else if (JA.isDeviceOffloading(Action::OFK_SYCL))
     Work(*C.getSingleOffloadToolChain<Action::OFK_Host>());
 
+  if (JA.isHostOffloading(Action::OFK_Raisa)) {
+    auto TCs = C.getOffloadToolChains<Action::OFK_Raisa>();
+    for (auto II = TCs.first, IE = TCs.second; II != IE; ++II)
+      Work(*II->second);
+  } else if (JA.isDeviceOffloading(Action::OFK_Raisa))
+    Work(*C.getSingleOffloadToolChain<Action::OFK_Host>());
+
   //
   // TODO: Add support for other offloading programming models here.
   //
@@ -232,7 +239,8 @@ static bool ShouldEnableAutolink(const ArgList &Args, const ToolChain &TC,
   }
   // The linker_option directives are intended for host compilation.
   if (JA.isDeviceOffloading(Action::OFK_Cuda) ||
-      JA.isDeviceOffloading(Action::OFK_HIP))
+      JA.isDeviceOffloading(Action::OFK_HIP) ||
+      JA.isDeviceOffloading(Action::OFK_Raisa))
     Default = false;
   return Args.hasFlag(options::OPT_fautolink, options::OPT_fno_autolink,
                       Default);
@@ -932,6 +940,8 @@ void Clang::AddPreprocessingOptions(Compilation &C, const JobAction &JA,
     getToolChain().AddHIPIncludeArgs(Args, CmdArgs);
   if (JA.isOffloading(Action::OFK_SYCL))
     getToolChain().addSYCLIncludeArgs(Args, CmdArgs);
+  if (JA.isOffloading(Action::OFK_Raisa))
+    getToolChain().AddRaisaIncludeArgs(Args, CmdArgs);
 
   // If we are offloading to a target via OpenMP we need to include the
   // openmp_wrappers folder which contains alternative system headers.
