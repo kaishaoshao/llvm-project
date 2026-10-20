@@ -92,6 +92,9 @@ static const OffloadArchToStringMap ArchNames[] = {
     {OffloadArch::GRANITERAPIDS, "graniterapids", ""},
     // Intel GPUS
     {OffloadArch::BMG_G21, "bmg_g21", ""},
+#ifdef __TSM_RISCV__
+    {OffloadArch::TSM_X82, "tsm-x82", ""},
+#endif
     {OffloadArch::Generic, "generic", ""},
     // clang-format on
 };

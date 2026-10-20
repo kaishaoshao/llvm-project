@@ -4902,6 +4902,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   bool IsHIPDevice = JA.isDeviceOffloading(Action::OFK_HIP);
   bool IsSYCL = JA.isOffloading(Action::OFK_SYCL);
   bool IsSYCLDevice = JA.isDeviceOffloading(Action::OFK_SYCL);
+  bool IsRaisa = JA.isOffloading(Action::OFK_Raisa);
+  bool IsRaisaDevice = JA.isDeviceOffloading(Action::OFK_Raisa);
   bool IsOpenMPDevice = JA.isDeviceOffloading(Action::OFK_OpenMP);
   bool IsExtractAPI = isa<ExtractAPIJobAction>(JA);
   bool IsDeviceOffloadAction = !(JA.isDeviceOffloading(Action::OFK_None) ||
@@ -4943,7 +4945,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
             << types::getTypeName(ExpectedInputType);
       }
       ExtractAPIInputs.push_back(I);
-    } else if (IsHostOffloadingAction) {
+    } else if (IsHostOffloadingAction || IsRaisa) {
       HostOffloadingInputs.push_back(I);
     } else if ((IsCuda || IsHIP) && !CudaDeviceInput) {
       CudaDeviceInput = &I;
@@ -4955,7 +4957,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   const llvm::Triple *AuxTriple =
-      (IsCuda || IsHIP) ? TC.getAuxTriple() : nullptr;
+      (IsCuda || IsHIP || IsRaisa) ? TC.getAuxTriple() : nullptr;
   bool IsWindowsMSVC = RawTriple.isWindowsMSVCEnvironment();
   bool IsUEFI = RawTriple.isUEFI();
   bool IsIAMCU = RawTriple.isOSIAMCU();
@@ -4989,12 +4991,13 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     Args.ClaimAllArgs(options::OPT_gen_cdb_fragment_path);
   }
 
-  if (IsCuda || IsHIP) {
-    // We have to pass the triple of the host if compiling for a CUDA/HIP device
-    // and vice-versa.
+  if (IsCuda || IsHIP || IsRaisa) {
+    // We have to pass the triple of the host if compiling for a CUDA/HIP/RAISA
+    // device and vice-versa.
     std::string NormalizedTriple;
     if (JA.isDeviceOffloading(Action::OFK_Cuda) ||
-        JA.isDeviceOffloading(Action::OFK_HIP))
+        JA.isDeviceOffloading(Action::OFK_HIP) ||
+        JA.isDeviceOffloading(Action::OFK_Raisa))
       NormalizedTriple = C.getSingleOffloadToolChain<Action::OFK_Host>()
                              ->getTriple()
                              .normalize();
@@ -5002,7 +5005,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       // Host-side compilation.
       NormalizedTriple =
           (IsCuda ? C.getSingleOffloadToolChain<Action::OFK_Cuda>()
-                  : C.getSingleOffloadToolChain<Action::OFK_HIP>())
+                  : IsHIP ? C.getSingleOffloadToolChain<Action::OFK_HIP>()
+                          : C.getSingleOffloadToolChain<Action::OFK_Raisa>())
               ->getTriple()
               .normalize();
       if (IsCuda) {
@@ -5041,6 +5045,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
             Args.MakeArgString("-Werror=format-invalid-specifier"));
       }
     }
+
+    if (IsRaisaDevice)
+      CmdArgs.append({"-mllvm", "-vectorize-loops=false"});
   }
 
   // Optimization level for CodeGen.
@@ -6038,7 +6045,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // Prepare `-aux-target-cpu` and `-aux-target-feature` unless
   // `--gpu-use-aux-triple-only` is specified.
   if (!Args.getLastArg(options::OPT_gpu_use_aux_triple_only) &&
-      (IsCudaDevice || IsHIPDevice || IsSYCLDevice)) {
+      (IsCudaDevice || IsHIPDevice || IsSYCLDevice || IsRaisaDevice)) {
     const ArgList &HostArgs =
         C.getArgsForToolChain(nullptr, StringRef(), Action::OFK_None);
     std::string HostCPU =
@@ -7733,6 +7740,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     if (IsCuda && !IsRDCMode) {
       assert(HostOffloadingInputs.size() == 1 && "Only one input expected");
       CmdArgs.push_back("-fcuda-include-gpubinary");
+      CmdArgs.push_back(HostOffloadingInputs.front().getFilename());
+    } else if (IsRaisa && !IsRDCMode) {
+      assert(HostOffloadingInputs.size() == 1 && "Only one input expected");
+      CmdArgs.push_back("-fraisa-include-rpubinary");
       CmdArgs.push_back(HostOffloadingInputs.front().getFilename());
     } else {
       for (const InputInfo Input : HostOffloadingInputs)

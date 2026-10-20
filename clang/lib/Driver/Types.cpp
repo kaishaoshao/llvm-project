@@ -136,6 +136,9 @@ bool types::isAcceptedByClang(ID Id) {
   case TY_HIP:
   case TY_PP_HIP:
   case TY_HIP_DEVICE:
+  case TY_RAISA:
+  case TY_PP_RAISA:
+  case TY_RAISA_DEVICE:
   case TY_ObjC: case TY_PP_ObjC: case TY_PP_ObjC_Alias:
   case TY_CXX: case TY_PP_CXX:
   case TY_ObjCXX: case TY_PP_ObjCXX: case TY_PP_ObjCXX_Alias:
@@ -259,6 +262,9 @@ bool types::isCXX(ID Id) {
   case TY_HIP:
   case TY_PP_HIP:
   case TY_HIP_DEVICE:
+  case TY_RAISA:
+  case TY_PP_RAISA:
+  case TY_RAISA_DEVICE:
     return true;
   }
 }
@@ -296,6 +302,18 @@ bool types::isHIP(ID Id) {
   case TY_HIP:
   case TY_PP_HIP:
   case TY_HIP_DEVICE:
+    return true;
+  }
+}
+
+bool types::isRaisa(ID Id) {
+  switch (Id) {
+  default:
+    return false;
+
+  case TY_RAISA:
+  case TY_PP_RAISA:
+  case TY_RAISA_DEVICE:
     return true;
   }
 }

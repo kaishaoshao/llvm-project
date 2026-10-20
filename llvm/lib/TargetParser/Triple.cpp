@@ -271,6 +271,9 @@ StringRef Triple::getVendorTypeName(VendorType Kind) {
   case PC: return "pc";
   case SCEI: return "scei";
   case SUSE: return "suse";
+#ifdef __TSM_RISCV__
+  case TSingMicro: return "tsingmicro";
+#endif
   }
 
   llvm_unreachable("Invalid VendorType!");
@@ -322,6 +325,9 @@ StringRef Triple::getOSTypeName(OSType Kind) {
   case LiteOS: return "liteos";
   case XROS: return "xros";
   case Vulkan: return "vulkan";
+#ifdef __TSM_RISCV__
+  case RAISA: return "raisa";
+#endif
   }
 
   llvm_unreachable("Invalid OSType");
@@ -663,6 +669,9 @@ static Triple::VendorType parseVendor(StringRef VendorName) {
       .Case("img", Triple::ImaginationTechnologies)
       .Case("mti", Triple::MipsTechnologies)
       .Case("nvidia", Triple::NVIDIA)
+#ifdef __TSM_RISCV__
+      .Case("tsingmicro", Triple::TSingMicro)
+#endif
       .Case("csr", Triple::CSR)
       .Case("amd", Triple::AMD)
       .Case("mesa", Triple::Mesa)
@@ -695,6 +704,9 @@ static Triple::OSType parseOS(StringRef OSName) {
     .StartsWith("rtems", Triple::RTEMS)
     .StartsWith("nacl", Triple::NaCl)
     .StartsWith("aix", Triple::AIX)
+#ifdef __TSM_RISCV__
+    .StartsWith("raisa", Triple::RAISA)
+#endif
     .StartsWith("cuda", Triple::CUDA)
     .StartsWith("nvcl", Triple::NVCL)
     .StartsWith("amdhsa", Triple::AMDHSA)

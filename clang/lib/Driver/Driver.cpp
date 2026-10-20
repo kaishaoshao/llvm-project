@@ -43,6 +43,7 @@
 #include "ToolChains/PPCFreeBSD.h"
 #include "ToolChains/PPCLinux.h"
 #include "ToolChains/PS4CPU.h"
+#include "ToolChains/Raisa.h"
 #include "ToolChains/SPIRV.h"
 #include "ToolChains/SPIRVOpenMP.h"
 #include "ToolChains/SYCL.h"
@@ -168,6 +169,24 @@ getHIPOffloadTargetTriple(const Driver &D, const ArgList &Args) {
   D.Diag(diag::err_drv_invalid_or_unsupported_offload_target) << TT->str();
   return std::nullopt;
 }
+
+#ifdef __TSM_RISCV__
+static std::optional<llvm::Triple>
+getRaisaOffloadTargetTriple(const Driver &D, const ArgList &Args) {
+  if (!Args.hasArg(options::OPT_offload_EQ)) {
+    // Default RAISA / TSRPU device triple.
+    return llvm::Triple("riscv64-tsingmicro-raisa");
+  }
+  auto TT = getOffloadTargetTriple(D, Args);
+  if (!TT)
+    return std::nullopt;
+  if (TT->getArch() == llvm::Triple::riscv64 &&
+      TT->getOS() == llvm::Triple::RAISA)
+    return TT;
+  D.Diag(diag::err_drv_invalid_or_unsupported_offload_target) << TT->str();
+  return std::nullopt;
+}
+#endif
 
 template <typename F> static bool usesInput(const ArgList &Args, F &&Fn) {
   return llvm::any_of(Args, [&](Arg *A) {
@@ -963,6 +982,10 @@ void Driver::CreateOffloadingDeviceToolChains(Compilation &C,
       llvm::any_of(Inputs, [](std::pair<types::ID, const llvm::opt::Arg *> &I) {
         return types::isCuda(I.first);
       });
+  bool IsRaisa =
+      llvm::any_of(Inputs, [](std::pair<types::ID, const llvm::opt::Arg *> &I) {
+        return types::isRaisa(I.first);
+      });
   bool IsHIP =
       llvm::any_of(Inputs,
                    [](std::pair<types::ID, const llvm::opt::Arg *> &I) {
@@ -1018,7 +1041,28 @@ void Driver::CreateOffloadingDeviceToolChains(Compilation &C,
                                           /*SpecificToolchain=*/true);
   }
 
-  if (IsCuda || IsHIP)
+#ifdef __TSM_RISCV__
+  if (IsRaisa && !UseLLVMOffload) {
+    auto RaisaTriple = getRaisaOffloadTargetTriple(*this, C.getInputArgs());
+    if (!RaisaTriple)
+      return;
+
+    auto &TC =
+        getOffloadToolChain(C.getInputArgs(), Action::OFK_Raisa, *RaisaTriple,
+                            C.getDefaultToolChain().getTriple());
+
+    // Emit a warning if the detected RAISA version is too new.
+    const RaisaInstallationDetector &RaisaInstallation =
+        static_cast<const toolchains::RaisaToolChain &>(TC).RaisaInstallation;
+    if (RaisaInstallation.isValid())
+      RaisaInstallation.WarnIfUnsupportedVersion();
+    C.addOffloadDeviceToolChain(&TC, Action::OFK_Raisa);
+    OffloadArchs[&TC] = getOffloadArchs(C, C.getArgs(), Action::OFK_Raisa, &TC,
+                                        /*SpecificToolchain=*/true);
+  }
+#endif
+
+  if (IsCuda || IsHIP || IsRaisa)
     CUIDOpts = CUIDOptions(C.getArgs(), *this);
 
   //
@@ -4431,6 +4475,7 @@ void Driver::BuildActions(Compilation &C, DerivedArgList &Args,
   bool UseNewOffloadingDriver =
       C.isOffloadingHostKind(Action::OFK_OpenMP) ||
       C.isOffloadingHostKind(Action::OFK_SYCL) ||
+      C.isOffloadingHostKind(Action::OFK_Raisa) ||
       Args.hasFlag(options::OPT_foffload_via_llvm,
                    options::OPT_fno_offload_via_llvm, false) ||
       Args.hasFlag(options::OPT_offload_new_driver,
@@ -4735,6 +4780,15 @@ static StringRef getCanonicalArchString(Compilation &C,
           << "HIP" << ArchStr;
     return StringRef();
   }
+#ifdef __TSM_RISCV__
+  else if (Triple.isRaisa() &&
+           (Arch == OffloadArch::UNKNOWN || !IsTSRPUOffloadArch(Arch))) {
+    if (SpecificToolchain)
+      C.getDriver().Diag(clang::diag::err_drv_offload_bad_rpu_arch)
+          << "RAISA" << ArchStr;
+    return StringRef();
+  }
+#endif
 
   if (IsNVIDIAOffloadArch(Arch))
     return Args.MakeArgStringRef(OffloadArchToString(Arch));
@@ -4844,6 +4898,10 @@ Driver::getOffloadArchs(Compilation &C, const llvm::opt::DerivedArgList &Args,
       Archs.insert(OffloadArchToString(OffloadArch::CudaDefault));
     } else if (Kind == Action::OFK_HIP) {
       Archs.insert(OffloadArchToString(OffloadArch::HIPDefault));
+#ifdef __TSM_RISCV__
+    } else if (Kind == Action::OFK_Raisa) {
+      Archs.insert(OffloadArchToString(OffloadArch::RaisaDefault));
+#endif
     } else if (Kind == Action::OFK_SYCL) {
       Archs.insert(StringRef());
     } else if (Kind == Action::OFK_OpenMP) {
@@ -4910,8 +4968,11 @@ Action *Driver::BuildOffloadingActions(Compilation &C,
   ActionList OffloadActions;
   OffloadAction::DeviceDependences DDeps;
 
-  const Action::OffloadKind OffloadKinds[] = {
-      Action::OFK_OpenMP, Action::OFK_Cuda, Action::OFK_HIP, Action::OFK_SYCL};
+  const Action::OffloadKind OffloadKinds[] = {Action::OFK_OpenMP,
+                                              Action::OFK_Cuda,
+                                              Action::OFK_HIP,
+                                              Action::OFK_SYCL,
+                                              Action::OFK_Raisa};
 
   for (Action::OffloadKind Kind : OffloadKinds) {
     SmallVector<const ToolChain *, 2> ToolChains;
@@ -4929,7 +4990,8 @@ Action *Driver::BuildOffloadingActions(Compilation &C,
 
     // The toolchain can be active for unsupported file types.
     if ((Kind == Action::OFK_Cuda && !types::isCuda(InputType)) ||
-        (Kind == Action::OFK_HIP && !types::isHIP(InputType)))
+        (Kind == Action::OFK_HIP && !types::isHIP(InputType)) ||
+        (Kind == Action::OFK_Raisa && !types::isRaisa(InputType)))
       continue;
 
     // Get the product of all bound architectures and toolchains.
@@ -5050,6 +5112,15 @@ Action *Driver::BuildOffloadingActions(Compilation &C,
         C.MakeAction<LinkJobAction>(OffloadActions, types::TY_CUDA_FATBIN);
     DDep.add(*FatbinAction, *C.getSingleOffloadToolChain<Action::OFK_Cuda>(),
              nullptr, Action::OFK_Cuda);
+#ifdef __TSM_RISCV__
+  } else if (C.isOffloadingHostKind(Action::OFK_Raisa)) {
+    // RAISA device code is linked into a shared object by the RPU linker
+    // before it is embedded into the host.
+    Action *FatbinAction =
+        C.MakeAction<LinkJobAction>(OffloadActions, types::TY_Image);
+    DDep.add(*FatbinAction, *C.getSingleOffloadToolChain<Action::OFK_Raisa>(),
+             nullptr, Action::OFK_Raisa);
+#endif
   } else if (HIPNoRDC && offloadDeviceOnly()) {
     // If we are in device-only non-RDC-mode we just emit the final HIP
     // fatbinary for each translation unit, linking each input individually.
@@ -6401,7 +6472,13 @@ const char *Driver::GetNamedOutputPath(Compilation &C, const JobAction &JA,
       bool IsHIPNoRDC = JA.getOffloadingDeviceKind() == Action::OFK_HIP &&
                         !C.getArgs().hasFlag(options::OPT_fgpu_rdc,
                                              options::OPT_fno_gpu_rdc, false);
-      bool UseOutExtension = IsHIPNoRDC || isa<OffloadPackagerJobAction>(JA);
+      // Likewise for the RPU relocatable-device-code pair; the RAISA device
+      // link is per compilation unit under -fno-rpu-rdc.
+      bool IsRaisaNoRDC = JA.getOffloadingDeviceKind() == Action::OFK_Raisa &&
+                          !C.getArgs().hasFlag(options::OPT_frpu_rdc,
+                                               options::OPT_fno_rpu_rdc, false);
+      bool UseOutExtension = IsHIPNoRDC || IsRaisaNoRDC ||
+                             isa<OffloadPackagerJobAction>(JA);
       if (UseOutExtension) {
         Output = BaseName;
         llvm::sys::path::replace_extension(Output, "");
@@ -6741,6 +6818,12 @@ const ToolChain &Driver::getOffloadToolChain(
         TC = std::make_unique<toolchains::AMDGPUOpenMPToolChain>(*this, Target,
                                                                  *HostTC, Args);
       break;
+#ifdef __TSM_RISCV__
+    case llvm::Triple::RAISA:
+      TC = std::make_unique<toolchains::RaisaToolChain>(*this, Target, *HostTC,
+                                                        Args);
+      break;
+#endif
     default:
       break;
     }
@@ -6770,6 +6853,10 @@ const ToolChain &Driver::getOffloadToolChain(
         TC = std::make_unique<toolchains::CudaToolChain>(*this, Target, *HostTC,
                                                          Args);
         break;
+      case Action::OFK_Raisa:
+        TC = std::make_unique<toolchains::RaisaToolChain>(*this, Target, *HostTC,
+                                                          Args);
+        break;
       default:
         break;
       }
@@ -6794,6 +6881,11 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
     case llvm::Triple::AIX:
       TC = std::make_unique<toolchains::AIX>(*this, Target, Args);
       break;
+#ifdef __TSM_RISCV__
+    case llvm::Triple::RAISA:
+      TC = std::make_unique<toolchains::TSRPUToolChain>(*this, Target, Args);
+      break;
+#endif
     case llvm::Triple::Haiku:
       TC = std::make_unique<toolchains::Haiku>(*this, Target, Args);
       break;
