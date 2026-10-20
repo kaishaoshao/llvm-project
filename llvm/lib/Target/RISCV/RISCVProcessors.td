@@ -578,7 +578,7 @@ def TENSTORRENT_ASCALON_D8 : RISCVProcessorModel<"tt-ascalon-d8",
 // XTsm82s tensor extension. `printMArch` does not expand `implies`, so
 // zicsr/zifencei must be listed even though Zicsr/Zifencei are implied by I.
 def TSM_X82 : RISCVProcessorModel<"tsm-x82",
-                                  NoSchedModel,
+                                  TX82Model,
                                   [Feature64Bit,
                                    FeatureStdExtI,
                                    FeatureStdExtM,
@@ -592,7 +592,18 @@ def TSM_X82 : RISCVProcessorModel<"tsm-x82",
                                    FeatureStdExtZve64x,
                                    FeatureStdExtZvfbfmin,
                                    FeatureStdExtZvfh,
-                                   FeatureVendorXTsm82s]>;
+                                   FeatureVendorXTsm82s],
+                                  // Tune features, extracted verbatim from the vendor
+                                  // RISCVGenSubtargetInfo.inc subtype table
+                                  // (wt-sched/dump_procfeat.cpp): the vendor enables
+                                  // exactly these five on tsm-x82.  TuneNoDefaultUnroll
+                                  // is what makes our build match the vendor's -O2 code
+                                  // size (G8 in COMPILER_PARITY_MATRIX.md).
+                                  [TuneAndes45,
+                                   TuneNoDefaultUnroll,
+                                   TuneShortForwardBranchOpt,
+                                   TunePreferVsetvliOverReadVLENB,
+                                   TunePostRAScheduler]>;
 
 def VENTANA_VEYRON_V1 : RISCVProcessorModel<"veyron-v1",
                                             NoSchedModel,
