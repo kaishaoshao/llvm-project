@@ -248,6 +248,12 @@ private:
   /// A collection of MCPseudoProbe in the current module
   MCPseudoProbeTable PseudoProbeTable;
 
+#ifdef __TSM_RISCV__
+public:
+  mutable unsigned NumNPUInstrs = 0;
+private:
+#endif
+
   struct COFFSectionKey {
     std::string SectionName;
     StringRef GroupName;

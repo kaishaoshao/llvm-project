@@ -480,6 +480,16 @@ namespace llvm {
       llvm_unreachable("Invalid RISCV vector tuple type");
     }
 
+    static MVT getTSRISCVVectorTupleVT(unsigned Sz, unsigned NFields) {
+#define GET_VT_ATTR(Ty, n, sz, Any, Int, FP, Vec, Sc, Tup, NF, nElem, EltTy) \
+    if (Tup && sz == Sz && NF == NFields)                                      \
+      return Ty;
+#include "llvm/CodeGen/GenVT.inc"
+#undef GET_VT_ATTR
+
+      llvm_unreachable("Invalid RISCV vector tuple type");
+    }
+
     /// Given a RISC-V vector tuple type, return the num_fields.
     unsigned getRISCVVectorTupleNumFields() const {
       assert(isRISCVVectorTuple() && SimpleTy >= FIRST_VALUETYPE &&

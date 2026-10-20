@@ -703,7 +703,10 @@ class MemorySSA {
 public:
   LLVM_ABI MemorySSA(Function &, AliasAnalysis *, DominatorTree *);
   LLVM_ABI MemorySSA(Loop &, AliasAnalysis *, DominatorTree *);
-
+#ifdef __TSM_RISCV__
+  MemorySSA(BasicBlock &StartingPoint, SmallVector<Instruction *, 8> &Intrs,
+            DominatorTree *);
+#endif
   // MemorySSA must remain where it's constructed; Walkers it creates store
   // pointers to it.
   MemorySSA(MemorySSA &&) = delete;

@@ -38,6 +38,12 @@ public:
                                 CallExpr *TheCall);
   void checkRVVTypeSupport(QualType Ty, SourceLocation Loc, Decl *D,
                            const llvm::StringMap<bool> &FeatureMap);
+#ifdef __TSM_RISCV__
+  bool CheckCTBuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
+                                  CallExpr *TheCall);
+  void CheckIndirectionOperand(const TargetInfo &TI, Expr *Op, QualType Ty,
+                               SourceLocation OpLoc);
+#endif
 
   bool isValidRVVBitcast(QualType srcType, QualType destType);
 

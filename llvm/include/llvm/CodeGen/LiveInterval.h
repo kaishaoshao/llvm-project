@@ -203,6 +203,10 @@ namespace llvm {
 
     Segments segments;   // the liveness segments
     VNInfoList valnos;   // value#'s
+#ifdef __TSM_RISCV__
+    LiveRange *ConflictRange = nullptr;
+    unsigned VRDefType = 0; // Especially 0 for non-vector register
+#endif
 
     // The segment set is used temporarily to accelerate initial computation
     // of live ranges of physical registers in computeRegUnitRange.

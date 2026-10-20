@@ -3176,7 +3176,33 @@ template <typename LHS, typename RHS>
 inline auto m_c_LogicalOp(const LHS &L, const RHS &R) {
   return m_LogicalOp<LHS, RHS, /*Commutable=*/true>(L, R);
 }
+#ifdef __TSM_RISCV__
+template <typename LHS, typename RHS> struct PHI2_match {
+  LHS L;
+  RHS R;
 
+  PHI2_match(const LHS &L, const RHS &R) : L(L), R(R) {}
+
+  bool match(llvm::Value *V) const {
+    using namespace llvm;
+    auto *PN = dyn_cast<PHINode>(V);
+    if (!PN)
+      return false;
+    if (PN->getNumIncomingValues() != 2)
+      return false;
+
+    Value *V0 = PN->getIncomingValue(0);
+    Value *V1 = PN->getIncomingValue(1);
+
+    return (L.match(V0) && R.match(V1)) || (L.match(V1) && R.match(V0));
+  }
+};
+
+template <typename LHS, typename RHS>
+inline PHI2_match<LHS, RHS> m_PHI(const LHS &L, const RHS &R) {
+  return PHI2_match<LHS, RHS>(L, R);
+}
+#endif
 } // end namespace PatternMatch
 } // end namespace llvm
 

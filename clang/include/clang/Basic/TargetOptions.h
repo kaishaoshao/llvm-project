@@ -75,6 +75,10 @@ public:
   /// address space.
   bool NVPTXUseShortPointers = false;
 
+  /// \brief If enabled, use 32-bit pointers for accessing shared
+  /// address space.
+  bool TSRPUUseShortPointers = false;
+
   /// \brief Code object version for AMDGPU.
   llvm::CodeObjectVersionKind CodeObjectVersion =
       llvm::CodeObjectVersionKind::COV_None;

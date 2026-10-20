@@ -706,6 +706,9 @@ enum : unsigned {
   EF_RISCV_FLOAT_ABI_QUAD = 0x0006,
   EF_RISCV_RVE = 0x0008,
   EF_RISCV_TSO = 0x0010,
+#ifdef __TSM_RISCV__
+  EF_RISCV_SIMT = 0x1000,
+#endif
 };
 
 // ELF Relocation types for RISC-V

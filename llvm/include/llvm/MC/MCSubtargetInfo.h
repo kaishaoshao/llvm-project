@@ -160,6 +160,9 @@ public:
   bool checkFeatures(StringRef FS) const;
 
   /// Get the machine model of a CPU.
+#ifdef __TSM_RISCV__
+  virtual
+#endif
   const MCSchedModel &getSchedModelForCPU(StringRef CPU) const;
 
   /// Get the machine model for this subtarget's CPU.

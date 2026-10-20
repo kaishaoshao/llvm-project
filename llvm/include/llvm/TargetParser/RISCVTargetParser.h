@@ -87,8 +87,16 @@ enum {
   MASK_AGNOSTIC = 2,
 };
 
+#define CT_SEW_E1_ENCODING (0b101)
+#define CT_SEW_E4_ENCODING (0b100)
+
 // Is this a SEW value that can be encoded into the VTYPE format.
 inline static bool isValidSEW(unsigned SEW) {
+#ifdef __TSM_RISCV__
+  if (SEW == 1 || SEW == 4) {
+    return true;
+  }
+#endif
   return isPowerOf2_32(SEW) && SEW >= 8 && SEW <= 64;
 }
 
@@ -98,7 +106,12 @@ inline static bool isValidLMUL(unsigned LMUL, bool Fractional) {
 }
 
 LLVM_ABI unsigned encodeVTYPE(VLMUL VLMUL, unsigned SEW, bool TailAgnostic,
-                              bool MaskAgnostic);
+                              bool MaskAgnostic
+#ifdef __TSM_RISCV__
+                              ,
+                              bool BF16Fmt = false
+#endif
+);
 
 LLVM_ABI unsigned encodeXSfmmVType(unsigned SEW, unsigned Widen, bool AltFmt);
 
@@ -118,11 +131,25 @@ inline static VLMUL encodeLMUL(unsigned LMUL, bool Fractional) {
 
 inline static unsigned decodeVSEW(unsigned VSEW) {
   assert(VSEW < 8 && "Unexpected VSEW value");
+#ifdef __TSM_RISCV__
+  if (VSEW == CT_SEW_E1_ENCODING) {
+    return 1;
+  } else if (VSEW == CT_SEW_E4_ENCODING) {
+    return 4;
+  }
+#endif
   return 1 << (VSEW + 3);
 }
 
 inline static unsigned encodeSEW(unsigned SEW) {
   assert(isValidSEW(SEW) && "Unexpected SEW value");
+#ifdef __TSM_RISCV__
+  if (SEW == 1) {
+    return CT_SEW_E1_ENCODING;
+  } else if (SEW == 4) {
+    return CT_SEW_E4_ENCODING;
+  }
+#endif
   return Log2_32(SEW) - 3;
 }
 
@@ -159,6 +186,9 @@ inline static bool isMaskAgnostic(unsigned VType) { return VType & 0x80; }
 
 inline static bool isAltFmt(unsigned VType) { return VType & 0x100; }
 
+#ifdef __TSM_RISCV__
+inline static bool isBF16Fmt(unsigned VType) { return VType & 0x100; }
+#endif
 LLVM_ABI void printVType(unsigned VType, raw_ostream &OS);
 
 LLVM_ABI unsigned getSEWLMULRatio(unsigned SEW, VLMUL VLMul);

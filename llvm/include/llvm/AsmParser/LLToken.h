@@ -156,6 +156,7 @@ enum Kind {
   kw_ptx_kernel,
   kw_ptx_device,
   kw_spir_kernel,
+  kw_rpu_kernel,
   kw_spir_func,
   kw_x86_64_sysvcc,
   kw_win64cc,

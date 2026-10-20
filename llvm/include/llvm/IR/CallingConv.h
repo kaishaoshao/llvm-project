@@ -284,6 +284,11 @@ namespace CallingConv {
     RISCV_VLSCall_32768 = 122,
     RISCV_VLSCall_65536 = 123,
 
+#ifdef __TSM_RISCV__
+    /// Used for RPU code object kernels.
+    RPU_KERNEL = 124,
+#endif
+
     /// The highest possible ID. Must be some 2^k - 1.
     MaxID = 1023
   };
@@ -305,6 +310,9 @@ constexpr bool isCallableCC(CallingConv::ID CC) {
   case CallingConv::AMDGPU_PS:
   case CallingConv::AMDGPU_VS:
   case CallingConv::SPIR_KERNEL:
+#ifdef __TSM_RISCV__
+  case CallingConv::RPU_KERNEL:
+#endif
     return false;
   default:
     return true;

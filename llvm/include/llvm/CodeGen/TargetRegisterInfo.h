@@ -1247,6 +1247,27 @@ public:
   // Whether this register should be ignored when generating CodeView debug
   // info, because it's a known there is no mapping available.
   virtual bool isIgnoredCVReg(MCRegister LLVMReg) const { return false; }
+
+#ifdef __TSM_RISCV__
+  class ConflictRangeDetector {
+  public:
+    ConflictRangeDetector() {}
+    virtual ~ConflictRangeDetector() {}
+  };
+
+  virtual std::unique_ptr<ConflictRangeDetector>
+  createConflictRangeDetector(MachineFunction &MF, LiveIntervals &LIS,
+                              const MachineLoopInfo &MLI,
+                              bool HasRegAllocFilter) const {
+    return nullptr;
+  }
+
+  /// Return the VRDefType for a spill reload instruction, or 0 if not a
+  /// whole-write instruction.
+  virtual unsigned getSpillReloadVRDefType(const MachineInstr &MI) const {
+    return 0;
+  }
+#endif
 };
 
 //===----------------------------------------------------------------------===//

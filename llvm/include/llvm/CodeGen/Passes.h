@@ -186,6 +186,10 @@ LLVM_ABI extern char &RABasicID;
 /// assigned in VirtRegMap.
 LLVM_ABI extern char &VirtRegRewriterID;
 LLVM_ABI FunctionPass *createVirtRegRewriter(bool ClearVirtRegs = true);
+#ifdef __TSM_RISCV__
+/// ClearVirtRegs = false, PreserveVRM = true
+LLVM_ABI FunctionPass *createVirtRegRewriterRVV();
+#endif
 
 /// UnreachableMachineBlockElimination - This pass removes unreachable
 /// machine basic blocks.

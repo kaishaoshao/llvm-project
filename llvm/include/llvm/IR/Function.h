@@ -283,6 +283,9 @@ public:
     default:
       return false;
     case CallingConv::PTX_Kernel:
+#ifdef __TSM_RISCV__
+    case CallingConv::RPU_KERNEL:
+#endif
     case CallingConv::AMDGPU_KERNEL:
     case CallingConv::SPIR_KERNEL:
       return true;
