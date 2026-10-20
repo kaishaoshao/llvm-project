@@ -3952,7 +3952,17 @@ bool RISCVDAGToDAGISel::selectSimm5Shl2(SDValue N, SDValue &Simm5,
 // allows us to choose between VSETIVLI or VSETVLI later.
 bool RISCVDAGToDAGISel::selectVLOp(SDValue N, SDValue &VL) {
   auto *C = dyn_cast<ConstantSDNode>(N);
-  if (C && isUInt<5>(C->getZExtValue())) {
+  // RAISA device kernels fix VLEN (hence VLMAX) at compile time, so every AVL
+  // is a compile-time constant; the fork keeps it as an *immediate* operand of
+  // the vector pseudo instead of materialising a GPR.  Vendor evidence: on
+  // `-triple riscv64-unknown-raisa` every constant AVL shows up as an immediate
+  // (`PseudoVID_V_M1 $noreg, 128, 5, 0`, `PseudoVSLH_VX_M2 ..., 128, 5, 0`),
+  // while the same source on the musl path (`-mcpu=tsm-x82`, where
+  // `HasVendorXTsm82s` is *also* true) keeps the upstream rule and gives
+  // `%2:gprnox0 = ADDI $x0, 128` plus a register operand.  Gating on the
+  // triple is therefore required (an xtsm82s predicate would not discriminate).
+  if (C && (isUInt<5>(C->getZExtValue()) ||
+            TM.getTargetTriple().isRaisa())) {
     VL = CurDAG->getTargetConstant(C->getZExtValue(), SDLoc(N),
                                    N->getValueType(0));
   } else if (C && C->isAllOnes()) {

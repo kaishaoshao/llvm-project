@@ -138,6 +138,13 @@ FunctionPass *createTX8RegisterRenamePass();
 void initializeTX8RegisterRenamePass(PassRegistry &);
 bool isTX8VRegRenameEnabled();
 
+// TX8RegisterAlignment.cpp -- fork `vreg-align`: widens the operand that an
+// `*_ALIGNED_*` pseudo demands and renames the instruction to its twin.  Runs
+// after twoaddressinstruction / before register-coalescer (see addPreISel()).
+extern char &TX8RegisterAlignmentPassID;
+FunctionPass *createTX8RegisterAlignmentPass();
+void initializeTX8RegisterAlignmentPass(PassRegistry &);
+
 void initializeRISCVAsmPrinterPass(PassRegistry &);
 } // namespace llvm
 

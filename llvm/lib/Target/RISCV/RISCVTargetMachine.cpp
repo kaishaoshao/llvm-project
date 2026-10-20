@@ -119,6 +119,15 @@ static cl::opt<bool>
                            cl::desc("Enable Machine Pipeliner for RISC-V"),
                            cl::init(false), cl::Hidden);
 
+// Fork `vreg-align` (TX8RegisterAlignment.cpp).  The vendor default is true and
+// the pass is inserted right after twoaddressinstruction; `=false` removes it
+// from the pipeline (the vendor then crashes on device kernels -- see
+// docs/compiler/OPT_BASELINE_MATRIX.md).
+static cl::opt<bool>
+    EnableVRegAlign("riscv-vreg-align",
+                    cl::desc("Enable the TX8 vector register alignment pass"),
+                    cl::init(true), cl::Hidden);
+
 extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   RegisterTargetMachine<RISCVTargetMachine> X(getTheRISCV32Target());
   RegisterTargetMachine<RISCVTargetMachine> Y(getTheRISCV64Target());
@@ -161,6 +170,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   initializeRISCVRedundantCopyEliminationPass(*PR);
   initializeRISCVAsmPrinterPass(*PR);
   initializeTX8RegisterRenamePass(*PR);
+  initializeTX8RegisterAlignmentPass(*PR);
 }
 
 static StringRef computeDataLayout(const Triple &TT,
@@ -572,6 +582,16 @@ bool RISCVPassConfig::addPreISel() {
                                   /* OnlyOptimizeForSize */ false,
                                   /* MergeExternalByDefault */ true));
   }
+
+  // Fork `vreg-align`: the vendor inserts TX8RegisterAlignment directly after
+  // twoaddressinstruction and before register-coalescer -- verified both in its
+  // RISCVTargetMachine.cpp.o relocations
+  // (`insertPass(&TwoAddressInstructionPassID, &TX8RegisterAlignmentPassID)`)
+  // and in its `-mllvm -debug-pass=Structure` listing
+  // (`-twoaddressinstruction -vreg-align -slotindexes -liveintervals
+  //   -register-coalescer ...`).
+  if (EnableVRegAlign)
+    insertPass(&TwoAddressInstructionPassID, &TX8RegisterAlignmentPassID);
 
   return false;
 }

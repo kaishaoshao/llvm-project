@@ -4629,6 +4629,43 @@ multiclass VPseudoXTsmVSLH_VV_VX {
 }
 defm PseudoXTsm_VSLH : VPseudoXTsmVSLH_VV_VX;
 
+// `*_ALIGNED_*` twins (fork `vreg-align` pass, patch 1014).
+//
+// The vendor duplicates a subset of its vector pseudos with an `_ALIGNED_`
+// affix.  For `vslh` the twin differs in exactly one way: its first source
+// operand is one LMUL step wider (the hardware reads the source as an
+// even-aligned register pair), so the twin's Op1Class is the *destination*
+// LMUL's class instead of the source's.  Evidence (`-stop-before=vreg-align`
+// followed by the vendor's own `llc -run-pass=vreg-align`,
+// mem_l1_size_1.rc):
+//
+//   undef %14.sub_vrm1_0:vrm2 = COPY killed %4   ; what the pass inserts
+//   early-clobber %6:vrm2 = PseudoVSLH_ALIGNED_VX_M2 undef %6, killed %14,
+//                           killed %5, 128, 5, 0
+//
+// The names are generated for every source LMUL of the plain family, which
+// reproduces the vendor's 24-name set
+// (`strings -a libLLVMRISCVDesc.a | grep -E '^PseudoVSLH_ALIGNED'`) exactly;
+// the pass only *selects* the LMUL_2/LMUL_4/LMUL_8 ones (see
+// TX8RegisterAlignment.cpp).
+multiclass VPseudoXTsmVSLH_ALIGNED_VV_VX {
+  foreach m = MxListW in {
+    defvar w = XTsmWiderLMUL<m>.W;
+    defvar mx = m.MX;
+    let AltFmtType = 1 in {
+      defm "_ALIGNED_VV" : VPseudoBinary<m.wvrclass, w.vrclass, w.vrclass, w,
+                                        "@earlyclobber $rd", 0, 3>,
+                           SchedBinary<"WriteVIWALUV", "ReadVIWALUV",
+                                       "ReadVIWALUV", mx, forcePassthruRead=true>;
+      defm "_ALIGNED_VX" : VPseudoBinary<m.wvrclass, w.vrclass, GPR, w,
+                                        "@earlyclobber $rd", 0, 3>,
+                           SchedBinary<"WriteVIWALUX", "ReadVIWALUV",
+                                       "ReadVIWALUX", mx, forcePassthruRead=true>;
+    }
+  }
+}
+defm PseudoXTsm_VSLH : VPseudoXTsmVSLH_ALIGNED_VV_VX;
+
 // Patterns must use the destination LMUL as well (upstream's VPatBinaryW_* uses
 // the source LMUL), so this is VPatBinaryW_VV/VX with `Wti.LMul.MX`.
 multiclass VPatXTsmBinaryW_VV_VX<string intrinsic, string instruction,

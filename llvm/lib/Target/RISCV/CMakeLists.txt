@@ -70,6 +70,7 @@ add_llvm_target(RISCVCodeGen
   TX8LowerSharedPass.cpp
   TX8OptimizeConfigInstrs.cpp
   TX8RegisterRename.cpp
+  TX8RegisterAlignment.cpp
   RISCVTargetTransformInfo.cpp
   RISCVVectorMaskDAGMutation.cpp
   RISCVVectorPeephole.cpp

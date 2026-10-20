@@ -141,6 +141,11 @@ class PseudoToVInst<string PseudoInst> {
                         // stripped for the pseudo->real lookup, exactly as the
                         // vendor does.
                         ["_BFloat16", ""],
+                        // The fork's pre-RA `vreg-align` pass rewrites a pseudo
+                        // into its `*_ALIGNED_*` twin (same real instruction,
+                        // one LMUL step wider operand), so the affix has to be
+                        // stripped for the pseudo->real lookup as well.
+                        ["_ALIGNED", ""],
                         ["_E64", ""],
                         ["_E32", ""],
                         ["_E16", ""],
