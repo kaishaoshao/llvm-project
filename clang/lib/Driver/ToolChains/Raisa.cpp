@@ -40,25 +40,51 @@ RaisaInstallationDetector::RaisaInstallationDetector(
     const Driver &D, const llvm::Triple &HostTriple,
     const llvm::opt::ArgList &Args)
     : D(D) {
+  struct Candidate {
+    std::string Path;
+    bool StrictChecking;
+    Candidate(std::string Path, bool StrictChecking = false)
+        : Path(Path), StrictChecking(StrictChecking) {}
+  };
+  SmallVector<Candidate, 4> Candidates;
+
   // The RAISA installation can be named explicitly with --raisa-path.
   if (Args.hasArg(options::OPT_raisa_path_EQ))
-    InstallPath = std::string(Args.getLastArgValue(options::OPT_raisa_path_EQ));
+    Candidates.emplace_back(
+        std::string(Args.getLastArgValue(options::OPT_raisa_path_EQ)));
 
-  if (!InstallPath.empty()) {
+  // --no-offloadlib disables looking for the device library, but not for the
+  // installation itself.
+  bool NoRaisaLib =
+      !Args.hasFlag(options::OPT_offloadlib, options::OPT_no_offloadlib, true);
+
+  auto &FS = D.getVFS();
+  for (const auto &Candidate : Candidates) {
+    InstallPath = Candidate.Path;
+    if (InstallPath.empty() || !FS.exists(InstallPath))
+      continue;
+
     BinPath = InstallPath;
     BinPath.append("/bin");
     IncludePath = InstallPath;
     IncludePath.append("/include");
     LibDevicePath = InstallPath;
     LibDevicePath.append("/txriscv/libdevice");
-  }
 
-  // The fork does not require a usable installation: device compilations are
-  // always driven with the RAISA 1.0 SDK version, and no device library is
-  // linked in (see RaisaToolChain::addClangTargetOptions).  The version checks
-  // (WarnIfUnsupportedVersion / CheckRaisaVersionSupportsArch) are stubs.
-  Version = RaisaVersion::RAISA_10;
-  IsValid = true;
+    if (!(FS.exists(IncludePath) && FS.exists(BinPath)))
+      continue;
+
+    bool CheckLibDevice = (!NoRaisaLib || Candidate.StrictChecking);
+    if (CheckLibDevice && !FS.exists(LibDevicePath))
+      continue;
+
+    // The fork does not parse any SDK version file: the device compilation is
+    // always driven with the RAISA 1.0 SDK version (see
+    // RaisaToolChain::addClangTargetOptions) and the version checks
+    // (WarnIfUnsupportedVersion / CheckRaisaVersionSupportsArch) are stubs.
+    IsValid = true;
+    break;
+  }
 }
 
 void RaisaInstallationDetector::AddRaisaIncludeArgs(
@@ -131,17 +157,8 @@ void TSRPU::Linker::constructLldCommand(Compilation &C, const JobAction &JA,
                                         const ArgList &Args) const {
   const ToolChain &TC = getToolChain();
   const Driver &D = TC.getDriver();
-  const bool BundleOutput = Args.hasFlag(
-      options::OPT_rpu_bundle_output, options::OPT_no_rpu_bundle_output, true);
 
-  ArgStringList LldArgs{"-m", "elf64lriscv"};
-
-  if (BundleOutput)
-    LldArgs.push_back("--whole-archive");
-
-  LldArgs.push_back("-shared");
-
-  addLTOOptions(TC, Args, LldArgs, Output, Inputs, /*IsThinLTO=*/false);
+  ArgStringList LldArgs{"-m"};
 
   // The LTO plugin of lld picks up the RPU target features.
   std::vector<StringRef> Features;
@@ -156,6 +173,8 @@ void TSRPU::Linker::constructLldCommand(Compilation &C, const JobAction &JA,
     LldArgs.push_back(Args.MakeArgString(MAttrString));
   }
 
+  LldArgs.push_back("elf64lriscv");
+
   // Forward -mllvm=<x> as -plugin-opt=<x>, as lld's LTO plugin expects.
   for (const Arg *A : Args.filtered(options::OPT_mllvm))
     LldArgs.push_back(
@@ -166,14 +185,53 @@ void TSRPU::Linker::constructLldCommand(Compilation &C, const JobAction &JA,
 
   addLinkerCompressDebugSectionsOption(TC, Args, LldArgs);
 
+  LldArgs.push_back("--whole-archive");
+
+  // Forward -Xoffload-linker=<x> to the device linker; a wrapped -mllvm option
+  // is rewritten as -plugin-opt.
+  for (const Arg *A : Args.filtered(options::OPT_Xoffload_linker)) {
+    StringRef ArgVal = A->getValue(1);
+    auto SplitArg = ArgVal.split("-mllvm=");
+    if (!SplitArg.second.empty())
+      LldArgs.push_back(
+          Args.MakeArgString(Twine("-plugin-opt=") + SplitArg.second));
+    else
+      LldArgs.push_back(Args.MakeArgString(ArgVal));
+    A->claim();
+  }
+
+  LldArgs.push_back("-shared");
+
+  if (Arg *A = Args.getLastArg(options::OPT_flto, options::OPT_flto_EQ)) {
+    if (A->getOption().matches(options::OPT_flto_EQ) &&
+        A->getValue() == StringRef("thin"))
+      LldArgs.push_back("-plugin-opt=thinlto");
+
+    // The optimization level matches CompilerInvocation.cpp.
+    StringRef OOpt = "2";
+    if (Arg *O = Args.getLastArg(options::OPT_O_Group)) {
+      if (O->getOption().matches(options::OPT_O4) ||
+          O->getOption().matches(options::OPT_Ofast))
+        OOpt = "3";
+      else if (O->getOption().matches(options::OPT_O))
+        OOpt = O->getValue();
+      else if (O->getOption().matches(options::OPT_O0))
+        OOpt = "0";
+    }
+    LldArgs.push_back(Args.MakeArgString(Twine("--lto-O") + OOpt));
+  }
+
   LldArgs.push_back("-o");
   LldArgs.push_back(Output.getFilename());
 
   for (const auto &II : Inputs)
     LldArgs.push_back(II.getFilename());
 
-  if (BundleOutput)
-    LldArgs.push_back("--no-whole-archive");
+  StringRef TargetID = Args.getLastArgValue(options::OPT_mcpu_EQ);
+  AddStaticDeviceLibsLinking(C, *this, JA, Inputs, Args, LldArgs, "tsm82",
+                             TargetID, /*IsBitCodeSDL=*/true);
+
+  LldArgs.push_back("--no-whole-archive");
 
   C.addCommand(std::make_unique<Command>(
       JA, *this, ResponseFileSupport::None(),
@@ -327,11 +385,11 @@ void RaisaToolChain::addClangTargetOptions(
                           true))
     return;
 
-  RaisaVersion RaisaInstallationVersion = RaisaInstallation.version();
-  if (RaisaInstallationVersion >= RaisaVersion::UNKNOWN)
-    CC1Args.push_back(DriverArgs.MakeArgString(
-        Twine("-target-sdk-version=") +
-        RaisaVersionToString(RaisaInstallationVersion)));
+  // The fork does not detect the SDK version from the installation; device
+  // compilations are always driven with the RAISA 1.0 SDK version.
+  CC1Args.push_back(DriverArgs.MakeArgString(
+      Twine("-target-sdk-version=") +
+      RaisaVersionToString(RaisaVersion::RAISA_10)));
 }
 
 llvm::DenormalMode RaisaToolChain::getDefaultDenormalModeForType(
