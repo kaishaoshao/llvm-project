@@ -153,6 +153,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   initializeRISCVExpandAtomicPseudoPass(*PR);
   initializeRISCVRedundantCopyEliminationPass(*PR);
   initializeRISCVAsmPrinterPass(*PR);
+  initializeTX8RegisterRenamePass(*PR);
 }
 
 static StringRef computeDataLayout(const Triple &TT,
@@ -597,6 +598,11 @@ void RISCVPassConfig::addPreEmitPass2() {
   addPass(createUnpackMachineBundles([&](const MachineFunction &MF) {
     return MF.getFunction().getParent()->getModuleFlag("kcfi");
   }));
+
+  // TX82: break vector register anti-dependencies.  Only enabled from -O2 on.
+  if (isTX8VRegRenameEnabled() &&
+      TM->getOptLevel() >= CodeGenOptLevel::Default)
+    addPass(createTX8RegisterRenamePass());
 }
 
 void RISCVPassConfig::addMachineSSAOptimization() {

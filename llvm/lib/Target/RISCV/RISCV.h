@@ -118,6 +118,10 @@ FunctionPass *createRISCVVMV0EliminationPass();
 void initializeRISCVVMV0EliminationPass(PassRegistry &);
 
 void initializeRISCVAsmPrinterPass(PassRegistry &);
+
+FunctionPass *createTX8RegisterRenamePass();
+void initializeTX8RegisterRenamePass(PassRegistry &);
+bool isTX8VRegRenameEnabled();
 } // namespace llvm
 
 #endif
