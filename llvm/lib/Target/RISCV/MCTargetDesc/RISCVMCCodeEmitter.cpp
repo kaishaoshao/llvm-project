@@ -14,6 +14,7 @@
 #include "MCTargetDesc/RISCVFixupKinds.h"
 #include "MCTargetDesc/RISCVMCAsmInfo.h"
 #include "MCTargetDesc/RISCVMCTargetDesc.h"
+#include "MCTargetDesc/TX8MCInfo.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCCodeEmitter.h"
@@ -460,6 +461,12 @@ void RISCVMCCodeEmitter::encodeInstruction(const MCInst &MI,
   }
   case 4: {
     uint32_t Bits = getBinaryCodeForInstr(MI, Fixups, STI);
+    // TX8 encodes RVV instructions in the CT encoding space rather than in the
+    // standard RVV space.  Instructions already encoded in CT (the XTsm82s
+    // "custom 3" defs) and everything outside the RVV opcode space pass
+    // through this translation unchanged.
+    if (STI.hasFeature(RISCV::FeatureVendorXTsm82s))
+      Bits = static_cast<uint32_t>(TX8MCInfo::tryConvertRVVToCTEncoding(Bits));
     support::endian::write(CB, Bits, llvm::endianness::little);
     break;
   }

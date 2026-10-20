@@ -214,16 +214,26 @@ void RISCVInstPrinter::printZeroOffsetMemOp(const MCInst *MI, unsigned OpNo,
 
 void RISCVInstPrinter::printVTypeI(const MCInst *MI, unsigned OpNo,
                                    const MCSubtargetInfo &STI, raw_ostream &O) {
-  unsigned Imm = MI->getOperand(OpNo).getImm();
-  // Print the raw immediate for reserved values: vlmul[2:0]=4, vsew[2:0]=0b1xx,
-  // or non-zero in bits 8 and above.
+  // The TX8 fork's VTYPE operand is 9 bits wide: vlmul[2:0], vsew[2:0],
+  // vta, vma and the BF16 element-format flag in bit 8
+  // (RISCVVType::isBF16Fmt).  Its assembler still writes bits 10 and 9 for the
+  // forms whose rd/rs1 is x0, but its disassembler ignores them -- including on
+  // the raw-immediate path -- so mask before doing anything else.
+  unsigned Imm = MI->getOperand(OpNo).getImm() & 0x1FF;
+  // Print the raw immediate for reserved values: vlmul[2:0]=4, vsew[2:0]=0b1xx.
+  // Bit 8 does not affect vlmul/vsew/vta/vma, so the text form stays valid and
+  // the fork renders the flag as a trailing `bf16` token.  The fork's
+  // assembler was *not* extended to parse that token, so this is
+  // disassembly-only (the vendor cannot round-trip these words either).
   if (RISCVVType::getVLMUL(Imm) == RISCVVType::VLMUL::LMUL_RESERVED ||
-      RISCVVType::getSEW(Imm) > 64 || (Imm >> 8) != 0) {
+      RISCVVType::getSEW(Imm) > 64) {
     O << formatImm(Imm);
     return;
   }
   // Print the text form.
   RISCVVType::printVType(Imm, O);
+  if (RISCVVType::isBF16Fmt(Imm))
+    O << ", bf16";
 }
 
 void RISCVInstPrinter::printXSfmmVType(const MCInst *MI, unsigned OpNo,

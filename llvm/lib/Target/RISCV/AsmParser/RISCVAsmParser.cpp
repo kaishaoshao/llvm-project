@@ -3819,11 +3819,19 @@ bool RISCVAsmParser::validateInstruction(MCInst &Inst,
   if ((MCID.TSFlags & RISCVII::VMConstraint) && (DestReg == RISCV::V0)) {
     // vadc, vsbc are special cases. These instructions have no mask register.
     // The destination register could not be V0.
+    // The XTsm82s encodings are separate definitions from the generic RVV
+    // ones, so the vendor's assembler recognises an instruction here by its
+    // XTsm opcode as well.  Without the XTsm entries below "vadc.vvm v0, ..."
+    // still fails, but as an overlap with the (literal) mask register rather
+    // than as a V0 destination, i.e. with the wrong diagnostic.
     if (Opcode == RISCV::VADC_VVM || Opcode == RISCV::VADC_VXM ||
         Opcode == RISCV::VADC_VIM || Opcode == RISCV::VSBC_VVM ||
         Opcode == RISCV::VSBC_VXM || Opcode == RISCV::VFMERGE_VFM ||
         Opcode == RISCV::VMERGE_VIM || Opcode == RISCV::VMERGE_VVM ||
-        Opcode == RISCV::VMERGE_VXM)
+        Opcode == RISCV::VMERGE_VXM || Opcode == RISCV::XTsm_VADC_VVM ||
+        Opcode == RISCV::XTsm_VADC_VXM || Opcode == RISCV::XTsm_VSBC_VVM ||
+        Opcode == RISCV::XTsm_VSBC_VXM || Opcode == RISCV::XTsm_VMERGE_VVM ||
+        Opcode == RISCV::XTsm_VMERGE_VXM)
       return Error(Loc, "the destination vector register group cannot be V0");
 
     // Regardless masked or unmasked version, the number of operands is the

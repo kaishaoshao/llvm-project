@@ -1,0 +1,583 @@
+//===-- TX8MCInfo.cpp - TX8 CT encoding conversion layer ------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// Reconstruction of the vendor's TX8MCInfo.cpp.  Not a mechanical port: the
+// control flow mirrors the recovered object (`docs/recovered/tx8-mcinfo/`)
+// instruction for instruction, including the register-reuse quirks that the
+// vendor code generator produced, because those quirks change which bits are
+// preserved.
+//
+// Two lookup tables drive the conversion:
+//
+//   RVV2CTFunctMap[64][7]  RVV (funct6, funct3) -> CT (funct3, funct6)
+//   CT2RVVFunctMap[448]    the inverse, built at static-init time
+//
+// An empty RVV2CT slot (first byte 0) means the RVV shape has no direct CT
+// image and falls into one of the hand-written special cases below.  An empty
+// CT2RVV slot keeps the sentinel funct3 0x07, which is what selects the
+// special cases on the way back.
+//
+//===----------------------------------------------------------------------===//
+
+#include "TX8MCInfo.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/ErrorHandling.h"
+
+#include <string>
+
+using namespace llvm;
+
+namespace {
+
+/// RVV (funct6, funct3) -> CT (funct3, funct6).  64 rows of 7 slots, two bytes
+/// per slot: byte 0 is the CT funct3, byte 1 the CT funct6.  Copied byte for
+/// byte from `docs/recovered/tx8-mcinfo/tables/RVV2CTFunctMap.hex` (896 bytes).
+const uint8_t RVV2CTFunctMap[896] = {
+  0x01, 0x03, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x03, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x0e, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x05, 0x0e, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x3c, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x2b, 0x01, 0x04, 0x00, 0x00, 0x00, 0x00, 0x05, 0x2b, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x2a, 0x01, 0x05, 0x00, 0x00, 0x00, 0x00, 0x05, 0x2a, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x2d, 0x01, 0x06, 0x00, 0x00, 0x00, 0x00, 0x05, 0x2d, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x2c, 0x01, 0x07, 0x00, 0x00, 0x00, 0x00, 0x05, 0x2c, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x01, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x11, 0x01, 0x09, 0x00, 0x00, 0x00, 0x00, 0x05, 0x11, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x12, 0x01, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x05, 0x12, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x15, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x3b, 0x00, 0x00, 0x00, 0x00, 0x05, 0x38, 0x05, 0x0c, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x02, 0x2f, 0x02, 0x2e, 0x00, 0x00, 0x02, 0x32,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x2b, 0x02, 0x35, 0x00, 0x00, 0x02, 0x33,
+  0x01, 0x0b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x0b, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x0d, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x0f, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x10, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x01, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x02, 0x37, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x1e, 0x01, 0x18, 0x02, 0x38, 0x00, 0x00, 0x05, 0x1e, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x21, 0x01, 0x19, 0x02, 0x39, 0x00, 0x00, 0x05, 0x21, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x23, 0x00, 0x00, 0x02, 0x3a, 0x00, 0x00, 0x05, 0x23, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x22, 0x01, 0x1b, 0x02, 0x3b, 0x00, 0x00, 0x05, 0x22, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x26, 0x01, 0x1c, 0x02, 0x3c, 0x00, 0x00, 0x05, 0x26, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x25, 0x01, 0x1d, 0x02, 0x3d, 0x00, 0x00, 0x05, 0x25, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x29, 0x00, 0x00, 0x02, 0x3e, 0x00, 0x00, 0x05, 0x29, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x28, 0x01, 0x1f, 0x02, 0x3f, 0x00, 0x00, 0x05, 0x28, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x01, 0x33, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x33,
+  0x00, 0x00, 0x00, 0x00, 0x01, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x32,
+  0x00, 0x00, 0x00, 0x00, 0x01, 0x35, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x35,
+  0x00, 0x00, 0x00, 0x00, 0x01, 0x34, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x34,
+  0x00, 0x00, 0x01, 0x24, 0x01, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x30,
+  0x01, 0x16, 0x00, 0x00, 0x01, 0x2e, 0x00, 0x00, 0x05, 0x16, 0x00, 0x00, 0x05, 0x2e,
+  0x00, 0x00, 0x00, 0x00, 0x01, 0x31, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x31,
+  0x00, 0x00, 0x00, 0x00, 0x01, 0x2f, 0x01, 0x27, 0x00, 0x00, 0x00, 0x00, 0x05, 0x2f,
+  0x01, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x17, 0x00, 0x00, 0x00, 0x00,
+  0x01, 0x1a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x1a, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+/// The inverse map, CT (funct3, funct6) -> RVV (funct3, funct6).  Unfilled
+/// slots keep the (0x07, 0x00) sentinel.  This mirrors
+/// `InitializeCT2RVVFunctMap::InitializeCT2RVVFunctMap` from
+/// `docs/recovered/tx8-mcinfo/TX8MCInfo_initmap.c`, including the four aliases
+/// the vendor patches in after the main loop.
+uint8_t CT2RVVFunctMap[896];
+
+struct InitializeCT2RVVFunctMap {
+  InitializeCT2RVVFunctMap() {
+    for (unsigned I = 0; I != 896; I += 2) {
+      CT2RVVFunctMap[I] = 0x07;
+      CT2RVVFunctMap[I + 1] = 0x00;
+    }
+
+    for (unsigned Row = 0; Row != 64; ++Row) {
+      for (unsigned Slot = 0; Slot != 7; ++Slot) {
+        const unsigned Off = Row * 14 + Slot * 2;
+        if (RVV2CTFunctMap[Off] == 0)
+          continue;
+        const unsigned Idx =
+            (RVV2CTFunctMap[Off] & 7) + (RVV2CTFunctMap[Off + 1] & 0x3f) * 7;
+        CT2RVVFunctMap[Idx * 2] = Slot;
+        CT2RVVFunctMap[Idx * 2 + 1] = Row;
+      }
+    }
+
+    // Four entries the vendor overwrites after the loop above.
+    CT2RVVFunctMap[228] = 0x02;
+    CT2RVVFunctMap[229] = 0x10;
+    CT2RVVFunctMap[290] = 0x04;
+    CT2RVVFunctMap[291] = 0x17;
+    CT2RVVFunctMap[772] = 0x00;
+    CT2RVVFunctMap[773] = 0x17;
+    CT2RVVFunctMap[864] = 0x00;
+    CT2RVVFunctMap[865] = 0x17;
+  }
+} InitializeCT2RVVFunctMapInstance;
+
+/// Render the low `Bits` bits of `Value` as a binary string, MSB first.
+std::string binString(uint32_t Value, unsigned Bits) {
+  std::string S;
+  S.reserve(Bits);
+  for (unsigned I = Bits; I-- > 0;)
+    S += ((Value >> I) & 1) ? '1' : '0';
+  return S;
+}
+
+/// The shared fatal path of `convertRVVALUToCTEncoding`.  The vendor builds
+/// this text with an ostringstream and then calls
+/// `report_fatal_error(Message, /*GenCrashDiag=*/true)`, so the process really
+/// dies; do not soften this into a normal diagnostic.
+[[noreturn]] void fatalUnsupportedRVV(uint32_t Word) {
+  std::string Msg = "Unsupported RVV instruction with funct6=0b";
+  Msg += binString((Word >> 26) & 0x3f, 6);
+  Msg += " funct3=0b";
+  Msg += binString((Word >> 12) & 7, 3);
+  Msg += " vs1=0b";
+  Msg += binString((Word >> 15) & 0x1f, 5);
+  Msg += " vs2=0b";
+  Msg += binString((Word >> 20) & 0x1f, 5);
+  Msg += " vm=0b";
+  Msg += binString((Word >> 25) & 1, 1);
+  llvm::report_fatal_error(llvm::StringRef(Msg), /*GenCrashDiag=*/true);
+}
+
+/// `convertRVVALUToCTEncoding(unsigned int)`, the OP-V (opcode 0x57) half of
+/// `tryConvertRVVToCTEncoding`.
+///
+/// `CtFunct6`/`CtFunct3`/`Bits` are the vendor's `uVar15`/`bVar7`/`uVar12`; the
+/// code intentionally reuses the incoming rs1 field as the CT funct3
+/// accumulator, so keep the reuse.
+uint32_t convertRVVALUToCTEncoding(uint32_t Word) {
+  const uint32_t Rs1 = (Word >> 15) & 0x1f;
+  const uint32_t Vs2 = (Word >> 20) & 0x1f;
+  const uint32_t Funct6 = (Word >> 26) & 0x3f;
+  uint32_t Bits = (Word & 0xffffff80u) | 0x7b;
+  const uint32_t Slot = ((Word >> 12) & 7) + Funct6 * 7;
+  uint32_t CtFunct6 = (Word >> 12) & 7;
+  uint8_t CtFunct3 = static_cast<uint8_t>(Rs1);
+
+  if (RVV2CTFunctMap[Slot * 2] == 0) {
+    const uint32_t Hi = Word >> 24;
+    const uint8_t F6Byte = static_cast<uint8_t>(Hi) & 0xfc;
+    const uint8_t WidthByte = static_cast<uint8_t>(Word >> 8);
+
+    if (F6Byte == 0x40) {
+      // funct6 == 0x10: integer add/sub forms.
+      if ((WidthByte & 0x70) == 0x20) {
+        if (CtFunct3 == 0) {
+          Bits = (Word & 0xfdffff80u) | 0x7b;
+          CtFunct3 = 5;
+          CtFunct6 = 0x37;
+        } else {
+          if (1 < ((CtFunct3 + 0x10) & 0x1f))
+            fatalUnsupportedRVV(Word);
+          CtFunct3 = 2;
+          CtFunct6 = 0x10;
+        }
+      } else {
+        if (((WidthByte & 0x70) != 0x60) || ((Word >> 16 & 0x1f0) != 0))
+          fatalUnsupportedRVV(Word);
+        CtFunct3 = 5;
+        CtFunct6 = 0x37;
+      }
+    } else if (F6Byte == 0x48) {
+      // funct6 == 0x12: the vs1-selected forms.
+      if ((WidthByte & 0x70) != 0x10)
+        fatalUnsupportedRVV(Word);
+      switch (Rs1) {
+      case 0:
+        CtFunct3 = 2;
+        CtFunct6 = 0x28;
+        Bits = (Word & 0xfff07f80u) | 0xc007b;
+        break;
+      case 1:
+        CtFunct3 = 2;
+        CtFunct6 = 0x28;
+        Bits = (Word & 0xfff07f80u) | 0x4807b;
+        break;
+      case 2:
+        CtFunct3 = 2;
+        CtFunct6 = 0x28;
+        Bits = (Word & 0xfff07f80u) | 0xb807b;
+        break;
+      case 3:
+        CtFunct3 = 2;
+        CtFunct6 = 0x28;
+        Bits = (Word & 0xfff07f80u) | 0x4007b;
+        break;
+      case 0xb:
+        CtFunct3 = 2;
+        CtFunct6 = 0x28;
+        Bits = (Word & 0xfff07f80u) | 0x2007b;
+        break;
+      case 0xc:
+        Bits = (Word & 0xfff07f80u) | 0x7b;
+        CtFunct3 = 2;
+        CtFunct6 = 0x28;
+        break;
+      case 0xd:
+        CtFunct3 = 2;
+        CtFunct6 = 0x28;
+        Bits = (Word & 0xfff07f80u) | 0x1007b;
+        break;
+      case 0x11:
+        CtFunct3 = 2;
+        CtFunct6 = 0x28;
+        Bits = (Word & 0xfff07f80u) | 0x2807b;
+        break;
+      case 0x14:
+        CtFunct3 = 2;
+        CtFunct6 = 0x28;
+        Bits = (Word & 0xfff07f80u) | 0x807b;
+        break;
+      case 0x1d:
+        CtFunct3 = 2;
+        CtFunct6 = 0x28;
+        Bits = (Word & 0xfff07f80u) | 0x1807b;
+        break;
+      default:
+        fatalUnsupportedRVV(Word);
+      }
+    } else if (F6Byte == 0x4c) {
+      // funct6 == 0x13.
+      if (((WidthByte & 0x70) != 0x10) ||
+          (CtFunct3 != 0 && (1 < ((CtFunct3 + 0x1c) & 0x1f))))
+        fatalUnsupportedRVV(Word);
+      CtFunct3 = 1;
+      CtFunct6 = 0x13;
+    } else if (F6Byte == 0x5c) {
+      // funct6 == 0x17: vmerge.vvm (vm == 0) / vmv.v.v (vm == 1).
+      CtFunct3 = static_cast<uint8_t>(Rs1);
+      if ((Word & 0x7000) == 0) {
+        if ((Hi & 2) == 0) {
+          CtFunct3 = 1;
+          CtFunct6 = 0x37;
+        } else {
+          CtFunct3 = 5;
+          CtFunct6 = 0x3d;
+          // The CT image swaps the vs1 and vs2 slots.
+          Bits = (Bits & 0xfe007fffu) | ((Vs2 & 0x1f) << 15) |
+                 ((Rs1 & 0x1f) << 20);
+        }
+      } else if (((static_cast<uint8_t>(Word >> 8) & 0x70) == 0x40)) {
+        // vmerge.vxm.
+        CtFunct3 = 5;
+        CtFunct6 = 0x14;
+      } else {
+        // AMBIGUOUS: the vendor reaches its generic "Unsupported RVV
+        // instruction with funct6=..." abort here (vmerge.vim and friends).
+        fatalUnsupportedRVV(Word);
+      }
+    } else {
+      if (((F6Byte != 0xb0) ||
+           ((((WidthByte & 0x70) - 0x30) & 0xe0) != 0)) ||
+          ((Word & 0xf8000) != 0))
+        fatalUnsupportedRVV(Word);
+      // funct6 == 0x2c with an all-zero vs1 slot: vnsrl.wi/vnclip.wi.  The CT
+      // image moves the shift amount into the fixed rs1 slot 0x14.
+      CtFunct3 = 2;
+      CtFunct6 = 0x28;
+      Bits = (Word & 0xfff07f80u) | 0xa007b;
+    }
+  } else {
+    CtFunct6 = RVV2CTFunctMap[Slot * 2 + 1] & 0x3f;
+    CtFunct3 = RVV2CTFunctMap[Slot * 2] & 7;
+  }
+
+  return (CtFunct6 << 26) | (static_cast<uint32_t>(CtFunct3) << 12) |
+         (Bits & 0x3ff8fff);
+}
+
+/// The load/store half of `tryConvertRVVToCTEncoding` (`CtFunct3` is 3 for the
+/// 0x07 LOAD-FP opcode and 4 for the 0x27 STORE-FP opcode).
+uint32_t convertRVVLoadStoreToCTEncoding(uint32_t Word, uint32_t CtFunct3) {
+  const uint32_t Nf = Word >> 29;
+  const uint32_t Top = Word >> 24;
+  uint32_t Bits = (Word & 0xffff8f80u) | 0x7b | (CtFunct3 << 12);
+  const uint32_t Lumop = static_cast<uint16_t>(Word >> 16) & 0xdf0;
+  const uint8_t NfByte = static_cast<uint8_t>(Word >> 24) & 0xe0;
+
+  if ((Top & 0xe0) == 0) {
+    // nf == 0: plain unit-stride / stride / indexed, or a whole-register load.
+    if (Lumop == 0x80) {
+      Bits &= 0xdfffffff;
+      Bits = (Bits & 0x3fffffffu) | ((Nf & 3) << 30);
+    }
+  } else {
+    if (Lumop != 0x80)
+      llvm::report_fatal_error("Segment load/store is not supported by TX8",
+                               /*GenCrashDiag=*/true);
+    Bits = (Word & 0xdfff8f80u) | 0x7b | (CtFunct3 << 12);
+    uint32_t Count;
+    if (NfByte == 0x60)
+      Count = 2;
+    else if (NfByte == 0xe0)
+      Count = 3;
+    else
+      Count = Nf & 3;
+    Bits = (Bits & 0x3fffffffu) | (Count << 30);
+  }
+
+  const uint8_t WidthByte = static_cast<uint8_t>(Word >> 8);
+  const uint32_t Width = WidthByte & 0x70;
+
+  if ((Top & 4) != 0) {
+    // Indexed.
+    Bits = (Bits & 0xf3ffffffu) | 0x4000000;
+    if ((WidthByte & 0x60) != 0x60)
+      llvm::report_fatal_error(
+          "TX8 indexed load/store support only b32/b64 index",
+          /*GenCrashDiag=*/true);
+    return ((Width != 0x60) ? 1u : 0u) << 28 | (Bits & 0xefffffff);
+  }
+
+  if (((Width + 0xb0) & 0xe0) == 0)
+    return ((Width != 0x50) ? 1u : 0u) << 28 | (Bits & 0xefffffff);
+
+  if (Lumop == 0x80)
+    return (1u << 28) | (Bits & 0xefffffff);
+
+  llvm::report_fatal_error(
+      "TX8 uint-stride/stride load/store support only b16/b32 data",
+      /*GenCrashDiag=*/true);
+}
+
+} // end anonymous namespace
+
+uint64_t TX8MCInfo::tryConvertRVVToCTEncoding(uint32_t Word) {
+  const uint32_t Opcode = Word & 0x7f;
+  uint32_t CtFunct3;
+
+  if (Opcode == 0x27) {
+    // STORE-FP.  funct3 1..4 are the scalar stores, which TX8 keeps as-is.
+    if (((Word >> 12 & 7) - 1) < 4)
+      return Word;
+    CtFunct3 = 4;
+  } else if (Opcode == 0x57) {
+    // OP-V.
+    if (((static_cast<uint8_t>(Word >> 8) ^ 0x70) & 0x70) != 0)
+      return convertRVVALUToCTEncoding(Word);
+
+    // funct3 == 7 is vsetvli / vsetivli.  vsetivli has bits 31..30 == 0b11.
+    if ((Word >> 30) != 3) {
+      if (static_cast<int32_t>(Word) < 0) {
+        uint32_t Tag = 0x48;
+        if ((Word & 0xf8000) == 0)
+          Tag = static_cast<uint8_t>(((Word & 0xf80) == 0) + 0x49);
+        return (Word & 0x1ffff80u) | 0x7b | (Tag << 25);
+      }
+      uint32_t Tag = 0;
+      if ((Word & 0xf8000) == 0)
+        Tag = static_cast<uint8_t>(((Word & 0xf80) == 0) + 1);
+      return (Word & 0x1fffff80u) | 0x7b | (Tag << 29);
+    }
+    llvm::report_fatal_error("vsetivli is not supported by TX8",
+                             /*GenCrashDiag=*/true);
+  } else if (Opcode == 0x07) {
+    // LOAD-FP.
+    if (((Word >> 12 & 7) - 1) < 4)
+      return Word;
+    CtFunct3 = 3;
+  } else {
+    return Word;
+  }
+
+  // mop != 0 with an all-zero lumop is the mask/fault-only-first shape.
+  if (!(((Word >> 24 & 0xc) != 0) || ((Word >> 16 & 0x170) == 0)))
+    llvm::report_fatal_error(
+        "Mask/fault-only-first load/store is not supported by TX8",
+        /*GenCrashDiag=*/true);
+
+  return convertRVVLoadStoreToCTEncoding(Word, CtFunct3);
+}
+
+uint32_t TX8MCInfo::tryConvertCTToRVVEncoding(uint32_t Word) {
+  if ((Word & 0x7f) != 0x7b)
+    return Word;
+
+  const uint32_t CtFunct3 = Word >> 12 & 7;
+
+  if (CtFunct3 != 5) {
+    if (5 < CtFunct3) {
+      if (CtFunct3 != 7)
+        return Word;
+      if (static_cast<int32_t>(Word) < 0) {
+        if (Word >> 28 == 9)
+          Word |= 0x81ffffff;
+        return Word;
+      }
+      return (Word & 0x1fffff80u) | 0x57;
+    }
+    if (2 < CtFunct3) {
+      uint32_t Hi = Word >> 24;
+      const uint8_t HiByte = static_cast<uint8_t>(Hi);
+      const uint8_t Width = HiByte & 0xc;
+      if (Width == 0xc)
+        return Word;
+      if ((Hi & 0x20) != 0)
+        return Word;
+      const uint32_t Lumop = static_cast<uint16_t>(Word >> 16) & 0xdf0;
+      uint32_t Res;
+      if (CtFunct3 == 3) {
+        Res = (Word & 0xffffff80u) | 7;
+        Hi = ((Hi & 0x10) != 0) + ((Width == 4) ? 6 : 5);
+      } else {
+        Res = (Word & 0xffffff80u) | 0x27;
+        if (Width == 4) {
+          Hi = ((Hi & 0x10) != 0) + 6;
+        } else if (Lumop == 0x80) {
+          Res = (Word & 0xefff8f80u) | 0x27;
+          const uint8_t Top2 = static_cast<uint8_t>(Word >> 24) & 0xc0;
+          uint32_t NewTop = 3;
+          if ((Top2 != 0x80) && (NewTop = 7, Top2 != 0xc0))
+            NewTop = Word >> 30;
+          return (Res & 0x1fffffffu) | (NewTop << 29);
+        } else {
+          Hi = ((Hi & 0x10) != 0) + 5;
+        }
+      }
+      Res = (Res & 0xefff8fffu) | ((Hi & 7) << 12);
+      if (Lumop != 0x80)
+        return Res;
+      const uint8_t Top2 = static_cast<uint8_t>(Word >> 24) & 0xc0;
+      uint32_t NewTop = 3;
+      if ((Top2 != 0x80) && (NewTop = 7, Top2 != 0xc0))
+        NewTop = Word >> 30;
+      return (Res & 0x1fffffffu) | (NewTop << 29);
+    }
+    if (CtFunct3 == 0)
+      return Word;
+  }
+
+  const uint32_t LowF3 = Word >> 12;
+  const uint32_t Funct6 = Word >> 26;
+  const uint32_t Slot = (LowF3 & 7) + Funct6 * 7;
+  uint32_t Bits = (Word & 0xffffff80u) | 0x57;
+  const uint32_t Vs2 = Word >> 20;
+  const uint32_t Rs1 = Word >> 15 & 0x1f;
+
+  uint32_t CtFunct6;
+  uint8_t NewF3;
+
+  if (CT2RVVFunctMap[Slot * 2] == 7) {
+    const uint32_t Shape = Word & 0xfc007000;
+    if (Shape == 0xdc005000) {
+      if ((Word & 0x2000000) == 0) {
+        Bits = (Word & 0xffffff80u) | 0x2000057;
+        CtFunct6 = 0x10;
+        NewF3 = 2;
+      } else {
+        CtFunct6 = 0x10;
+        NewF3 = 6;
+      }
+    } else if (Shape == 0x4c001000) {
+      if (((int8_t)Rs1 != 0) && (1 < ((Rs1 + 0x1c) & 0x1f)))
+        return Word;
+      CtFunct6 = 0x13;
+      NewF3 = 1;
+    } else {
+      if (Shape != 0xa0002000)
+        return Word;
+      switch (Rs1) {
+      default:
+        return Word;
+      case 0:
+        CtFunct6 = 0x12;
+        NewF3 = 1;
+        Bits = (Word & 0xfff07f80u) | 0x60057;
+        break;
+      case 1:
+        CtFunct6 = 0x12;
+        NewF3 = 1;
+        Bits = (Word & 0xfff07f80u) | 0xa0057;
+        break;
+      case 2:
+        CtFunct6 = 0x12;
+        NewF3 = 1;
+        Bits = (Word & 0xfff07f80u) | 0x68057;
+        break;
+      case 3:
+        CtFunct6 = 0x12;
+        NewF3 = 1;
+        Bits = (Word & 0xfff07f80u) | 0xe8057;
+        break;
+      case 4:
+        CtFunct6 = 0x12;
+        NewF3 = 1;
+        Bits = (Word & 0xfff07f80u) | 0x58057;
+        break;
+      case 5:
+        CtFunct6 = 0x12;
+        NewF3 = 1;
+        Bits = (Word & 0xfff07f80u) | 0x88057;
+        break;
+      case 8:
+        CtFunct6 = 0x12;
+        NewF3 = 1;
+        Bits = (Word & 0xfff07f80u) | 0x18057;
+        break;
+      case 9:
+        CtFunct6 = 0x12;
+        NewF3 = 1;
+        Bits = (Word & 0xfff07f80u) | 0x8057;
+        break;
+      case 0x14:
+        Bits = (Word & 0xfff07f80u) | 0x57;
+        CtFunct6 = 0x2c;
+        NewF3 = 3;
+        break;
+      case 0x17:
+        CtFunct6 = 0x12;
+        NewF3 = 1;
+        Bits = (Word & 0xfff07f80u) | 0x10057;
+        break;
+      case 0x18:
+        Bits = (Word & 0xfff07f80u) | 0x57;
+        CtFunct6 = 0x12;
+        NewF3 = 1;
+        break;
+      }
+    }
+  } else {
+    NewF3 = CT2RVVFunctMap[Slot * 2] & 7;
+    CtFunct6 = static_cast<uint8_t>(CT2RVVFunctMap[Slot * 2 + 1]) & 0x3f;
+  }
+
+  const uint32_t Fields = (CtFunct6 << 26) | (static_cast<uint32_t>(NewF3) << 12);
+  uint32_t Out = (Bits & 0x3ff8fff) | Fields;
+
+  // funct3 == 5 && funct6 == 0x3d: slot map is the "swapped" whole-register
+  // form, so move vs2 into the rs1 slot and rs1 into the vs2 slot.
+  if (((LowF3 & 7) == 5) && (Funct6 == 0x3d))
+    Out = (Bits & 0x2000fff) | Fields | (Rs1 << 20) | ((Vs2 & 0x1f) << 15);
+
+  return Out;
+}

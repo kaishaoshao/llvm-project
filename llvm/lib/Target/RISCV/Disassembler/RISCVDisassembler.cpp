@@ -12,6 +12,7 @@
 
 #include "MCTargetDesc/RISCVBaseInfo.h"
 #include "MCTargetDesc/RISCVMCTargetDesc.h"
+#include "MCTargetDesc/TX8MCInfo.h"
 #include "TargetInfo/RISCVTargetInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDecoderOps.h"
@@ -83,6 +84,17 @@ static DecodeStatus DecodeGPRRegisterClass(MCInst &Inst, uint32_t RegNo,
     return MCDisassembler::Fail;
 
   MCRegister Reg = RISCV::X0 + RegNo;
+  Inst.addOperand(MCOperand::createReg(Reg));
+  return MCDisassembler::Success;
+}
+
+static DecodeStatus DecodeSRRegisterClass(MCInst &Inst, uint32_t RegNo,
+                                          uint64_t Address,
+                                          const MCDisassembler *Decoder) {
+  if (RegNo >= 32)
+    return MCDisassembler::Fail;
+
+  MCRegister Reg = RISCV::SR0 + RegNo;
   Inst.addOperand(MCOperand::createReg(Reg));
   return MCDisassembler::Success;
 }
@@ -804,6 +816,7 @@ static constexpr DecoderListEntry DecoderList32[]{
     {DecoderTableRV32Only32, {}, "RV32-only standard 32-bit instructions"},
     {DecoderTableZfinx32, {}, "Zfinx (Float in Integer)"},
     {DecoderTableZdinxRV32Only32, {}, "RV32-only Zdinx (Double in Integer)"},
+    {DecoderTableXTsm32, {RISCV::FeatureVendorXTsm82s}, "TSM-X82 extensions"},
 };
 
 DecodeStatus RISCVDisassembler::getInstruction32(MCInst &MI, uint64_t &Size,
@@ -819,6 +832,14 @@ DecodeStatus RISCVDisassembler::getInstruction32(MCInst &MI, uint64_t &Size,
   // Use uint64_t to match getInstruction48. decodeInstruction is templated
   // on the Insn type.
   uint64_t Insn = support::endian::read32le(Bytes.data());
+
+  // TX8 keeps RVV instructions in the CT encoding space rather than in the
+  // standard RVV space, so translate back before the decoder tables are
+  // consulted.  Words the CT space does not translate (including the CT
+  // encodings of the vendor-only instructions) are returned unchanged and are
+  // handled by the XTsm82s decoder table below.
+  if (STI.hasFeature(RISCV::FeatureVendorXTsm82s))
+    Insn = TX8MCInfo::tryConvertCTToRVVEncoding(static_cast<uint32_t>(Insn));
 
   for (const DecoderListEntry &Entry : DecoderList32) {
     if (!Entry.haveContainedFeatures(STI.getFeatureBits()))
