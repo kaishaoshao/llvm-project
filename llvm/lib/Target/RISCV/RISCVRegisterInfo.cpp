@@ -162,6 +162,12 @@ BitVector RISCVRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   markSuperRegs(Reserved, RISCV::FRM);
   markSuperRegs(Reserved, RISCV::FFLAGS);
 
+  // TX8 rounding mode register and vector memory marker.  Both are only used
+  // as implicit operands by the TX8InsertXFRM pass and are never defined, so
+  // they must be reserved for liveness to be modelled correctly.
+  markSuperRegs(Reserved, RISCV::XFRM);
+  markSuperRegs(Reserved, RISCV::MEM_ALLOC);
+
   // SiFive VCIX state registers.
   markSuperRegs(Reserved, RISCV::SF_VCIX_STATE);
 

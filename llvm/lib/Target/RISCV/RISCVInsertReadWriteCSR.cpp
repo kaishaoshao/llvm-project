@@ -178,6 +178,12 @@ bool RISCVInsertReadWriteCSR::runOnMachineFunction(MachineFunction &MF) {
   if (!ST.hasVInstructions())
     return false;
 
+  // TX8 has no `frm` CSR: the rounding mode lives in the architectural `xfrm`
+  // register and is programmed by the TX8InsertXFRM pass (`vsetxfrm`), so the
+  // CSR based save/restore below must not run.
+  if (ST.hasVendorXTsm82s())
+    return false;
+
   TII = ST.getInstrInfo();
 
   bool Changed = false;

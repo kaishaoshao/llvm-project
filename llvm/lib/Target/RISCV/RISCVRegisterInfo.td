@@ -848,6 +848,15 @@ def FFLAGS : RISCVReg<0, "fflags">;
 def FRM    : RISCVReg<0, "frm">;
 def FCSR   : RISCVReg<0, "fcsr">;
 
+// TX8 (tsm-x82) architectural registers.  Both are only ever referenced as
+// implicit physical register operands inserted by the TX8InsertXFRM pass:
+// XFRM holds the rounding mode programmed by `vsetxfrm` (it replaces the FRM
+// CSR) and MEM_ALLOC marks vector memory operations for the register
+// allocator.  Neither has an encoding nor belongs to a register class, so
+// they can only be named, never allocated.
+def XFRM      : RISCVReg<0, "xfrm">;
+def MEM_ALLOC : RISCVReg<0, "mem_alloc">;
+
 // Shadow Stack register
 def SSP    : RISCVReg<0, "ssp">;
 
