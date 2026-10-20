@@ -123,6 +123,25 @@ set(ppc_htm_files
   htmxlintrin.h
   )
 
+set(raisa_files
+  __clang_raisa_builtin_cache.h
+  __clang_raisa_builtin_tma.h
+  __clang_raisa_builtin_types.h
+  __clang_raisa_builtin_vars.h
+  __clang_raisa_conv.h
+  __clang_raisa_cooperative_groups.h
+  __clang_raisa_device_functions.h
+  __clang_raisa_dte.h
+  __clang_raisa_intrinsics.h
+  __clang_raisa_libdevice.h
+  __clang_raisa_lsu.h
+  __clang_raisa_math.h
+  __clang_raisa_mma.h
+  __clang_raisa_ne.h
+  __clang_raisa_near_mem.h
+  __clang_raisa_runtime_wrapper.h
+  )
+
 set(riscv_files
   riscv_bitmanip.h
   riscv_corev_alu.h
@@ -322,6 +341,7 @@ set(files
   ${opencl_files}
   ${ppc_files}
   ${ppc_htm_files}
+  ${raisa_files}
   ${riscv_files}
   ${spirv_files}
   ${systemz_files}
