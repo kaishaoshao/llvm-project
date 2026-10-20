@@ -291,7 +291,7 @@ RISCVTargetLowering::RISCVTargetLowering(const TargetMachine &TM,
   // NOTE (wt-exec line): this is the only hunk this line needs in a file that
   // the E line also edits, and it is deliberately two lines.
   if (STI.hasVendorXTsm82s())
-    addRegisterClass(MVT::v1i128, &RISCV::SRRegClass);
+    addRegisterClass(MVT::v1i128, &RISCV::SRF128RegClass);
 
   // Compute derived properties from the register classes.
   computeRegisterProperties(STI.getRegisterInfo());

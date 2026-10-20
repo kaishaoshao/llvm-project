@@ -94,7 +94,7 @@ static DecodeStatus DecodeSRRegisterClass(MCInst &Inst, uint32_t RegNo,
   if (RegNo >= 32)
     return MCDisassembler::Fail;
 
-  MCRegister Reg = RISCV::SR0 + RegNo;
+  MCRegister Reg = RISCV::S0 + RegNo;
   Inst.addOperand(MCOperand::createReg(Reg));
   return MCDisassembler::Success;
 }

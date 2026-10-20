@@ -18,6 +18,9 @@
 
 //===----------------------------------------------------------------------===//
 // XTsm82s scalar/stream (SR) register file: sr0..sr31
+// MIR spelling (matched to the vendor): records S0..S31 / class SRF128,
+// assembly name "sr0".. -- MIR prints the record name, the AsmPrinter prints
+// the RISCVReg name, which is why the vendor shows $s0 in MIR and sr0 in asm.
 //
 // Each SR register is one 128-bit SIMT mask.  Together with `$exec` this is the
 // register file that carries the "(B)" EXEC/mask family:
@@ -32,7 +35,7 @@
 //===----------------------------------------------------------------------===//
 
 foreach Index = 0-31 in {
-  def SR#Index : RISCVReg<Index, "sr"#Index>,
+  def S#Index : RISCVReg<Index, "sr"#Index>,
                  DwarfRegNum<[!add(Index, 3104)]>;
 }
 
@@ -41,8 +44,8 @@ def XTsmSRRI : RegInfoByHwMode<[RV32, RV64],
                                 RegInfo<128, 128, 128>]>;
 
 let RegInfos = XTsmSRRI in
-def SR : RISCVRegisterClass<[v1i128], 128,
-                             (add (sequence "SR%u", 0, 31))> {
+def SRF128 : RISCVRegisterClass<[v1i128], 128,
+                             (add (sequence "S%u", 0, 31))> {
   let isAllocatable = 1;
 }
 
@@ -81,7 +84,7 @@ class XTsm82sInst<dag outs, dag ins, string mnem, string asmops,
 // XTsm82s instructions
 //===----------------------------------------------------------------------===//
 
-def XTsm_AND_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "and.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
+def XTsm_AND_SS : XTsm82sInst<(outs SRF128:$vd), (ins SRF128:$vs2, SRF128:$vs1), "and.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
   let RVVConstraint = VMConstraint;
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b010;
@@ -91,7 +94,7 @@ def XTsm_AND_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "and.ss", "
   let Inst{24-20} = vs2;
 }
 
-def XTsm_ANDN_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "andn.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
+def XTsm_ANDN_SS : XTsm82sInst<(outs SRF128:$vd), (ins SRF128:$vs2, SRF128:$vs1), "andn.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
   let RVVConstraint = VMConstraint;
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b010;
@@ -353,7 +356,7 @@ def XTsm_INST_BARRIER : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "
   let hasSideEffects = 1;
 }
 
-def XTsm_ISETEXEC : XTsm82sInst<(outs), (ins SR:$vs2), "isetexec", "$vs2", [HasVendorXTsm82s]> {
+def XTsm_ISETEXEC : XTsm82sInst<(outs), (ins SRF128:$vs2), "isetexec", "$vs2", [HasVendorXTsm82s]> {
   let Inst{19-0} = 0b10000111000001111011;
   let Inst{31-25} = 0b1011111;
   let Inst{24-20} = vs2;
@@ -883,7 +886,7 @@ def XTsm_MOVEXECZ : XTsm82sInst<(outs GPR:$rd), (ins), "movexecz", "$rd", [HasVe
   let hasSideEffects = 1;
 }
 
-def XTsm_MV128_S_V : XTsm82sInst<(outs SR:$vd), (ins VR:$vs2), "mv128.s.v", "$vd, $vs2", [HasVendorXTsm82s]> {
+def XTsm_MV128_S_V : XTsm82sInst<(outs SRF128:$vd), (ins VR:$vs2), "mv128.s.v", "$vd, $vs2", [HasVendorXTsm82s]> {
   let RVVConstraint = WidenCvt;
   let Inst{6-0} = 0b1111011;
   let Inst{19-12} = 0b00000001;
@@ -892,7 +895,7 @@ def XTsm_MV128_S_V : XTsm82sInst<(outs SR:$vd), (ins VR:$vs2), "mv128.s.v", "$vd
   let Inst{24-20} = vs2;
 }
 
-def XTsm_MV128_S_X : XTsm82sInst<(outs SR:$vd), (ins GPR:$rs2, GPR:$rs1), "mv128.s.x", "$vd, $rs2, $rs1", [HasVendorXTsm82s]> {
+def XTsm_MV128_S_X : XTsm82sInst<(outs SRF128:$vd), (ins GPR:$rs2, GPR:$rs1), "mv128.s.x", "$vd, $rs2, $rs1", [HasVendorXTsm82s]> {
   let RVVConstraint = Vrgather;
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b010;
@@ -902,7 +905,7 @@ def XTsm_MV128_S_X : XTsm82sInst<(outs SR:$vd), (ins GPR:$rs2, GPR:$rs1), "mv128
   let Inst{24-20} = rs2;
 }
 
-def XTsm_MV128_V_S : XTsm82sInst<(outs VR:$vd), (ins SR:$vs2), "mv128.v.s", "$vd, $vs2", [HasVendorXTsm82s]> {
+def XTsm_MV128_V_S : XTsm82sInst<(outs VR:$vd), (ins SRF128:$vs2), "mv128.v.s", "$vd, $vs2", [HasVendorXTsm82s]> {
   let RVVConstraint = VS2Constraint;
   let Inst{6-0} = 0b1111011;
   let Inst{19-12} = 0b00000001;
@@ -911,7 +914,7 @@ def XTsm_MV128_V_S : XTsm82sInst<(outs VR:$vd), (ins SR:$vs2), "mv128.v.s", "$vd
   let Inst{24-20} = vs2;
 }
 
-def XTsm_NAND_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "nand.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
+def XTsm_NAND_SS : XTsm82sInst<(outs SRF128:$vd), (ins SRF128:$vs2, SRF128:$vs1), "nand.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
   let RVVConstraint = VMConstraint;
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b010;
@@ -991,7 +994,7 @@ def XTsm_NE_SET_PREC : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "n
   let mayStore = 1;
 }
 
-def XTsm_NOR_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "nor.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
+def XTsm_NOR_SS : XTsm82sInst<(outs SRF128:$vd), (ins SRF128:$vs2, SRF128:$vs1), "nor.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
   let RVVConstraint = VMConstraint;
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b010;
@@ -1001,7 +1004,7 @@ def XTsm_NOR_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "nor.ss", "
   let Inst{24-20} = vs2;
 }
 
-def XTsm_OR_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "or.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
+def XTsm_OR_SS : XTsm82sInst<(outs SRF128:$vd), (ins SRF128:$vs2, SRF128:$vs1), "or.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
   let RVVConstraint = VMConstraint;
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b010;
@@ -1011,7 +1014,7 @@ def XTsm_OR_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "or.ss", "$v
   let Inst{24-20} = vs2;
 }
 
-def XTsm_ORN_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "orn.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
+def XTsm_ORN_SS : XTsm82sInst<(outs SRF128:$vd), (ins SRF128:$vs2, SRF128:$vs1), "orn.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
   let RVVConstraint = VMConstraint;
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b010;
@@ -4354,7 +4357,7 @@ def XTsm_WAIT_SYNC : XTsm82sInst<(outs), (ins GPR:$rd, GPR:$rs2, GPR:$rs1), "wai
   let hasSideEffects = 1;
 }
 
-def XTsm_XNOR_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "xnor.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
+def XTsm_XNOR_SS : XTsm82sInst<(outs SRF128:$vd), (ins SRF128:$vs2, SRF128:$vs1), "xnor.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
   let RVVConstraint = VMConstraint;
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b010;
@@ -4364,7 +4367,7 @@ def XTsm_XNOR_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "xnor.ss",
   let Inst{24-20} = vs2;
 }
 
-def XTsm_XOR_SS : XTsm82sInst<(outs SR:$vd), (ins SR:$vs2, SR:$vs1), "xor.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
+def XTsm_XOR_SS : XTsm82sInst<(outs SRF128:$vd), (ins SRF128:$vs2, SRF128:$vs1), "xor.ss", "$vd, $vs2, $vs1", [HasVendorXTsm82s]> {
   let RVVConstraint = VMConstraint;
   let Inst{6-0} = 0b1111011;
   let Inst{14-12} = 0b010;
@@ -4488,7 +4491,7 @@ def : InstAlias<"vneg.v $vd, $vs",
 // "no lane left active" (execz).  raisa.divergent is IntrNoMem +
 // IntrHasSideEffects, hence hasSideEffects = 1.
 let isPseudo = 1, hasSideEffects = 1, mayLoad = 0, mayStore = 0 in
-def PseudoRAISA_DIVERGENT : Pseudo<(outs GPR:$rd), (ins SR:$vs2), []>;
+def PseudoRAISA_DIVERGENT : Pseudo<(outs GPR:$rd), (ins SRF128:$vs2), []>;
 
 // `llvm.riscv.raisa.get.kernel.entry.exec` is an *overloaded* intrinsic
 // (`llvm_anyvector_ty`) with no operands, so its result type can only be
@@ -4527,28 +4530,28 @@ def : Pat<(int_riscv_mov128_s_v vbool32_t:$vs2),
 
 // The SIMT binary ops on 128-bit masks.
 def : Pat<(int_riscv_and_s v1i128:$vs2, v1i128:$vs1),
-          (XTsm_AND_SS SR:$vs2, SR:$vs1)>;
+          (XTsm_AND_SS SRF128:$vs2, SRF128:$vs1)>;
 def : Pat<(int_riscv_or_s v1i128:$vs2, v1i128:$vs1),
-          (XTsm_OR_SS SR:$vs2, SR:$vs1)>;
+          (XTsm_OR_SS SRF128:$vs2, SRF128:$vs1)>;
 def : Pat<(int_riscv_xor_s v1i128:$vs2, v1i128:$vs1),
-          (XTsm_XOR_SS SR:$vs2, SR:$vs1)>;
+          (XTsm_XOR_SS SRF128:$vs2, SRF128:$vs1)>;
 def : Pat<(int_riscv_andn_s v1i128:$vs2, v1i128:$vs1),
-          (XTsm_ANDN_SS SR:$vs2, SR:$vs1)>;
+          (XTsm_ANDN_SS SRF128:$vs2, SRF128:$vs1)>;
 def : Pat<(int_riscv_orn_s v1i128:$vs2, v1i128:$vs1),
-          (XTsm_ORN_SS SR:$vs2, SR:$vs1)>;
+          (XTsm_ORN_SS SRF128:$vs2, SRF128:$vs1)>;
 def : Pat<(int_riscv_nand_s v1i128:$vs2, v1i128:$vs1),
-          (XTsm_NAND_SS SR:$vs2, SR:$vs1)>;
+          (XTsm_NAND_SS SRF128:$vs2, SRF128:$vs1)>;
 def : Pat<(int_riscv_nor_s v1i128:$vs2, v1i128:$vs1),
-          (XTsm_NOR_SS SR:$vs2, SR:$vs1)>;
+          (XTsm_NOR_SS SRF128:$vs2, SRF128:$vs1)>;
 def : Pat<(int_riscv_xnor_s v1i128:$vs2, v1i128:$vs1),
-          (XTsm_XNOR_SS SR:$vs2, SR:$vs1)>;
+          (XTsm_XNOR_SS SRF128:$vs2, SRF128:$vs1)>;
 
 // void llvm.riscv.set.exec(<1 x i128>)
-def : Pat<(int_riscv_set_exec v1i128:$vs2), (XTsm_ISETEXEC SR:$vs2)>;
+def : Pat<(int_riscv_set_exec v1i128:$vs2), (XTsm_ISETEXEC SRF128:$vs2)>;
 
 // i64 = llvm.riscv.raisa.divergent(<1 x i128>); finished by TX8LegalizeEXEC.
 def : Pat<(int_riscv_raisa_divergent v1i128:$vs2),
-          (PseudoRAISA_DIVERGENT SR:$vs2)>;
+          (PseudoRAISA_DIVERGENT SRF128:$vs2)>;
 
 // <vscale x 2 x i1> = llvm.riscv.raisa.get.kernel.entry.exec();
 // finished by RISCVPreRAExpandPseudo.
