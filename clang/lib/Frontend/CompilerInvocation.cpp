@@ -2970,6 +2970,9 @@ static void GenerateFrontendArgs(const FrontendOptions &Opts,
     case Language::CUDA:
       Lang = "cuda";
       break;
+    case Language::RAISA:
+      Lang = "raisa";
+      break;
     case Language::HIP:
       Lang = "hip";
       break;
@@ -3204,6 +3207,7 @@ static bool ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
                 .Case("cl", Language::OpenCL)
                 .Case("clcpp", Language::OpenCLCXX)
                 .Case("cuda", Language::CUDA)
+                .Case("raisa", Language::RAISA)
                 .Case("hip", Language::HIP)
                 .Case("c++", Language::CXX)
                 .Case("objective-c", Language::ObjC)
@@ -3661,6 +3665,10 @@ static bool IsInputCompatibleWithStandard(InputKind IK,
     return S.getLanguage() == Language::CUDA ||
            S.getLanguage() == Language::CXX;
 
+  case Language::RAISA:
+    return S.getLanguage() == Language::CXX ||
+           S.getLanguage() == Language::RAISA;
+
   case Language::HIP:
     return S.getLanguage() == Language::CXX || S.getLanguage() == Language::HIP;
 
@@ -3696,6 +3704,8 @@ static StringRef GetInputKindName(InputKind IK) {
     return "CUDA";
   case Language::HIP:
     return "HIP";
+  case Language::RAISA:
+    return "RAISA";
 
   case Language::Asm:
     return "Asm";

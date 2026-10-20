@@ -639,6 +639,26 @@ static void InitializeStandardPredefinedMacros(const TargetInfo &TI,
     }
   }
 
+  if (LangOpts.RAISA) {
+    Builder.defineMacro("__RAISA__");
+    if (LangOpts.RAISAIsDevice)
+      Builder.defineMacro("__RAISA_DEVICE_COMPILE__");
+    else
+      Builder.defineMacro("__RAISA_HOST_COMPILE__");
+
+    Builder.defineMacro("__host__", "__attribute__((host))");
+    Builder.defineMacro("__device__", "__attribute__((device))");
+    Builder.defineMacro("__global__", "__attribute__((global))");
+    Builder.defineMacro("__forceinline__", "__attribute__((always_inline))");
+    Builder.defineMacro("__cluster_dims__(x,y,z)",
+                        "__attribute__((cluster_dims(x,y,z)))");
+    Builder.defineMacro("__gmem__", "__attribute__((gmem))");
+    Builder.defineMacro("__L1shared__", "__attribute__((l1shared))");
+    Builder.defineMacro("__shared__", "__attribute__((l0ashared))");
+    Builder.defineMacro("__L0Ashared__", "__attribute__((l0ashared))");
+    Builder.defineMacro("__L0Wshared__", "__attribute__((l0wshared))");
+  }
+
   if (LangOpts.OpenACC) {
     // FIXME: When we have full support for OpenACC, we should set this to the
     // version we support. Until then, set as '1' by default, but provide a
@@ -1494,6 +1514,9 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     // backend's target defines.
     Builder.defineMacro("__CUDA_ARCH__");
   }
+
+  if (LangOpts.RAISAIsDevice)
+    Builder.defineMacro("__RAISA_ARCH__");
 
   // We need to communicate this to our CUDA/HIP header wrapper, which in turn
   // informs the proper CUDA/HIP headers of this choice.

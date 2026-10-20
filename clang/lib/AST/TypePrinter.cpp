@@ -2673,6 +2673,16 @@ std::string Qualifiers::getAddrSpaceAsString(LangAS AS) {
     return "__constant__";
   case LangAS::cuda_shared:
     return "__shared__";
+  case LangAS::raisa_generic:
+    return "__generic__";
+  case LangAS::raisa_gmem:
+    return "__gmem__";
+  case LangAS::raisa_l1shared:
+    return "__L1shared__";
+  case LangAS::raisa_l0ashared:
+    return "__L0Ashared__";
+  case LangAS::raisa_l0wshared:
+    return "__L0Wshared__";
   case LangAS::ptr32_sptr:
     return "__sptr __ptr32";
   case LangAS::ptr32_uptr:

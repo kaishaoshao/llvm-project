@@ -184,6 +184,15 @@ void RISCVTargetInfo::getTargetDefines(const LangOptions &Opts,
                         Twine(getVersionValue(ExtInfo.Major, ExtInfo.Minor)));
   }
 
+  // The TSM X82 extension ships a second, vendor-namespaced macro next to the
+  // `__riscv_xtsm82s` the loop above already emits, and vendor sources test it
+  // to select device code paths. The vendor keys it off the raw `+xtsm82s`
+  // entry of the target feature list (visible as that exact literal in front
+  // of `__TSM_RISCV__` in the vendor's libclang), which is how `-march`,
+  // `-mcpu=tsm-x82` and an explicit `-target-feature +xtsm82s` all produce it.
+  if (llvm::is_contained(getTargetOpts().Features, "+xtsm82s"))
+    Builder.defineMacro("__TSM_RISCV__");
+
   if (ISAInfo->hasExtension("zmmul"))
     Builder.defineMacro("__riscv_mul");
 
@@ -259,6 +268,20 @@ void RISCVTargetInfo::getTargetDefines(const LangOptions &Opts,
       llvm_unreachable("default cf-branch-label scheme should already be "
                        "transformed to other scheme");
     }
+  }
+
+  if (getTriple().isRaisa()) {
+    Builder.defineMacro("__TSRPU__");
+    Builder.defineMacro("__global__", "__attribute__((global))");
+    Builder.defineMacro("__host__", "__attribute__((host))");
+    Builder.defineMacro("__device__", "__attribute__((device))");
+    Builder.defineMacro("__cluster_dims__(x,y,z)",
+                        "__attribute__((cluster_dims(x,y,z)))");
+    Builder.defineMacro("__gmem__", "__attribute__((gmem))");
+    Builder.defineMacro("__L1shared__", "__attribute__((l1shared))");
+    Builder.defineMacro("__shared__", "__attribute__((l0ashared))");
+    Builder.defineMacro("__L0Ashared__", "__attribute__((l0ashared))");
+    Builder.defineMacro("__L0Wshared__", "__attribute__((l0wshared))");
   }
 }
 

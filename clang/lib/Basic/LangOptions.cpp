@@ -185,6 +185,7 @@ void LangOptions::setLangDefaults(LangOptions &Opts, Language Lang,
   }
 
   Opts.HIP = Lang == Language::HIP;
+  Opts.RAISA = Lang == Language::RAISA;
   Opts.CUDA = Lang == Language::CUDA || Opts.HIP;
   if (Opts.HIP) {
     // HIP toolchain does not support 'Fast' FPOpFusion in backends since it
