@@ -276,6 +276,19 @@ def VLOpFrag : PatFrag<(ops), (XLenVT (VLOp (XLenVT AVL:$vl)))>;
 // This must be kept in sync with RISCV::VLMaxSentinel.
 def VLMax : OutPatFrag<(ops), (XLenVT -1)>;
 
+// The fork's ISel does *not* fold an immediate into the `_VI` (and `_WI`)
+// forms on the RAISA device path: it materialises the constant into a GPR and
+// uses the `.vx` form.  Evidence: `-mllvm -print-before=riscv-insert-vsetvli`
+// on mem_l1shared_u64_uniform.rc gives the vendor `PseudoVADD_VX_M1` where this
+// tree folds the constant into `PseudoVADD_VI_M1`, and all 237 vendor `.s`
+// files of the round-2 corpus contain *zero* `.vi` / `.wi` instructions.
+// `HasVendorXTsm82s` cannot express this (it is also true for
+// musl/`-mcpu=tsm-x82`, where `.vi` folding is correct), so the condition has
+// to be the triple -- see the same note in TX8RegisterAlignment.cpp.
+def IsRaisaDevice : Predicate<"Subtarget->getTargetTriple().isRaisa()">;
+def IsNotRaisaDevice : Predicate<"!Subtarget->getTargetTriple().isRaisa()">;
+
+
 def SelectScalarFPAsInt : ComplexPattern<fAny, 1, "selectScalarFPAsInt", [], [],
                                          1>;
 
@@ -4974,7 +4987,8 @@ multiclass VPatBinaryV_VX_INT<string intrinsic, string instruction,
 multiclass VPatBinaryV_VI<string intrinsic, string instruction,
                           list<VTypeInfo> vtilist, Operand imm_type> {
   foreach vti = vtilist in
-    let Predicates = GetVTypePredicates<vti>.Predicates in
+    let Predicates = !listconcat(GetVTypePredicates<vti>.Predicates,
+                                 [IsNotRaisaDevice]) in
     defm : VPatBinary<intrinsic, instruction # "_VI_" # vti.LMul.MX,
                       vti.Vector, vti.Vector, XLenVT, vti.Mask,
                       vti.Log2SEW, vti.RegClass,
@@ -4985,7 +4999,8 @@ multiclass VPatBinaryV_VI_RM<string intrinsic, string instruction,
                              list<VTypeInfo> vtilist,
                              Operand imm_type> {
   foreach vti = vtilist in
-    let Predicates = GetVTypePredicates<vti>.Predicates in
+    let Predicates = !listconcat(GetVTypePredicates<vti>.Predicates,
+                                 [IsNotRaisaDevice]) in
     defm : VPatBinaryRoundingMode<intrinsic,
                                   instruction # "_VI_" # vti.LMul.MX,
                                   vti.Vector, vti.Vector, XLenVT, vti.Mask,
@@ -4997,7 +5012,8 @@ multiclass VPatBinaryV_VI_INT<string intrinsic, string instruction,
                               list<VTypeInfo> vtilist, Operand imm_type> {
   foreach vti = vtilist in {
     defvar ivti = GetIntVTypeInfo<vti>.Vti;
-    let Predicates = GetVTypePredicates<ivti>.Predicates in
+    let Predicates = !listconcat(GetVTypePredicates<ivti>.Predicates,
+                                 [IsNotRaisaDevice]) in
     defm : VPatBinary<intrinsic, instruction # "_VI_" # vti.LMul.MX,
                       vti.Vector, vti.Vector, XLenVT, vti.Mask,
                       vti.Log2SEW, vti.RegClass,
@@ -5390,7 +5406,8 @@ multiclass VPatBinaryM_VX<string intrinsic, string instruction,
 multiclass VPatBinaryM_VI<string intrinsic, string instruction,
                           list<VTypeInfo> vtilist> {
   foreach vti = vtilist in
-    let Predicates = GetVTypePredicates<vti>.Predicates in
+    let Predicates = !listconcat(GetVTypePredicates<vti>.Predicates,
+                                 [IsNotRaisaDevice]) in
     defm : VPatBinaryM<intrinsic, instruction # "_VI_" # vti.LMul.MX,
                        vti.Mask, vti.Vector, XLenVT, vti.Mask,
                        vti.Log2SEW, VR,

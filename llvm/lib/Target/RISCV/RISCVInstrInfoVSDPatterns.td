@@ -143,7 +143,9 @@ multiclass VPatBinarySDNode_VV_VX_VI<SDPatternOperator vop, string instruction_n
                                      Operand ImmType = simm5>
     : VPatBinarySDNode_VV_VX<vop, instruction_name> {
   foreach vti = AllIntegerVectors in {
-    let Predicates = GetVTypePredicates<vti>.Predicates in
+    // RAISA keeps the `.vx` form (see IsNotRaisaDevice in RISCVInstrInfoVPseudos.td).
+    let Predicates = !listconcat(GetVTypePredicates<vti>.Predicates,
+                                 [IsNotRaisaDevice]) in
     def : VPatBinarySDNode_XI<vop, instruction_name, "VI",
                               vti.Vector, vti.Vector, vti.Log2SEW,
                               vti.LMul, vti.AVL, vti.RegClass,

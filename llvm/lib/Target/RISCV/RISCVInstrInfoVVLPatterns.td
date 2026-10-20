@@ -960,7 +960,10 @@ multiclass VPatBinaryVL_VV_VX_VI<SDPatternOperator vop, string instruction_name,
                                  Operand ImmType = simm5>
     : VPatBinaryVL_VV_VX<vop, instruction_name> {
   foreach vti = AllIntegerVectors in {
-    let Predicates = GetVTypePredicates<vti>.Predicates in
+    // RAISA: the fork keeps the `.vx` form and materialises the constant
+    // instead of folding it into `.vi` (see IsNotRaisaDevice).
+    let Predicates = !listconcat(GetVTypePredicates<vti>.Predicates,
+                                 [IsNotRaisaDevice]) in
     def : VPatBinaryVL_XI<vop, instruction_name, "VI",
                           vti.Vector, vti.Vector, vti.Vector, vti.Mask,
                           vti.Log2SEW, vti.LMul, vti.RegClass, vti.RegClass,
@@ -1198,6 +1201,7 @@ multiclass VPatIntegerSetCCVL_VI_Swappable<VTypeInfo vti, string instruction_nam
                                            CondCode cc, CondCode invcc,
                                            ComplexPattern splatpat_kind = SplatPat_simm5> {
   defvar instruction_masked = !cast<Instruction>(instruction_name#"_VI_"#vti.LMul.MX#"_MASK");
+  let Predicates = [IsNotRaisaDevice] in {
   def : Pat<(vti.Mask (riscv_setcc_vl (vti.Vector vti.RegClass:$rs1),
                                       (splatpat_kind simm5:$rs2), cc,
                                       VR:$passthru,
@@ -1216,6 +1220,7 @@ multiclass VPatIntegerSetCCVL_VI_Swappable<VTypeInfo vti, string instruction_nam
             (instruction_masked VR:$passthru, vti.RegClass:$rs1,
                                 simm5:$rs2, (vti.Mask VMV0:$vm), GPR:$vl,
                                 vti.Log2SEW, TA_MU)>;
+  }
 }
 
 multiclass VPatFPSetCCVL_VV_VF_FV<SDPatternOperator vop, CondCode cc,
