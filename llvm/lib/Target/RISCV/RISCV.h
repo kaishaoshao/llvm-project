@@ -134,6 +134,15 @@ void initializeTX8OptimizeConfigInstrsPass(PassRegistry &);
 FunctionPass *createTX8LegalizeEXECPass();
 void initializeTX8LegalizeEXECPass(PassRegistry &);
 
+// TX8AnnotateControlFlow.cpp -- fork `tx8-annotate-control-flow`: rewrites
+// every lane-divergent conditional branch into a divergence query
+// (`get.pred.mask` / `and.s` / `raisa.divergent`) and restores the enclosing
+// active mask (`set.exec`) where such a region closes.  Runs immediately
+// before `simt2simd`, which is the only order that lets it see the
+// pre-vectorisation CFG.
+FunctionPass *createTX8AnnotateControlFlowLegacyPass();
+void initializeTX8AnnotateControlFlowLegacyPass(PassRegistry &);
+
 FunctionPass *createTX8RegisterRenamePass();
 void initializeTX8RegisterRenamePass(PassRegistry &);
 bool isTX8VRegRenameEnabled();

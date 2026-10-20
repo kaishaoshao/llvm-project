@@ -155,6 +155,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   // in addPostRegAlloc() below.
   initializeTX8LegalizeEXECPass(*PR);
   initializeTX8OptimizeConfigInstrsPass(*PR);
+  initializeTX8AnnotateControlFlowLegacyPass(*PR);
   initializeTX8TransformSIMTToSIMDPass(*PR);
   initializeTX8LowerSharedLegacyPass(*PR);
   initializeRISCVVMV0EliminationPass(*PR);
@@ -543,6 +544,21 @@ void RISCVPassConfig::addIRPasses() {
     // the loop passes and *before* `simt2simd`, which `-mllvm
     // -print-before=config-instr-opt -mllvm -print-before=simt2simd` confirms.
     addPass(createTX8OptimizeConfigInstrsPass());
+    // The vendor's `-mllvm -debug-pass=Structure` order is
+    //   ... -structurizecfg -loops -cycles -uniformity
+    //   -tx8-annotate-control-flow -simt2simd -domtree -early-cse
+    //   -rpu-lower-shared ...
+    // i.e. the control-flow annotation runs immediately before `simt2simd`.
+    // It has to: `simt2simd` may only vectorise kernels whose branches are
+    // uniform, and the annotation is what turns a lane-dependent `br` into a
+    // `raisa.divergent` query.  (`rpu-unify-divergent-exit-nodes` and
+    // `structurizecfg`, which the vendor runs just before it, are MIR/IR
+    // no-ops for every cell of the round-2 corpus -- verified with
+    // `-print-before=rpu-unify-divergent-exit-nodes` /
+    // `-print-before=structurizecfg` / `-print-before=tx8-annotate-control-flow`
+    // on `control_nested` and `control_early_return` -- so they are not
+    // ported.)
+    addPass(createTX8AnnotateControlFlowLegacyPass());
     addPass(createTX8TransformSIMTToSIMDPass());
     // The vendor's pipeline runs `-domtree -early-cse` between `simt2simd` and
     // `rpu-lower-shared` (verbatim from its own `-mllvm

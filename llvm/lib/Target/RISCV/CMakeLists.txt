@@ -64,6 +64,7 @@ add_llvm_target(RISCVCodeGen
   RISCVSubtarget.cpp
   RISCVTargetMachine.cpp
   RISCVTargetObjectFile.cpp
+  TX8AnnotateControlFlow.cpp
   TX8InsertXFRM.cpp
   TX8LegalizeEXEC.cpp
   TX8TransformSIMTToSIMD.cpp
