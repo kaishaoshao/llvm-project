@@ -95,6 +95,22 @@ static cl::opt<bool> DisablePostRAMachineSink("disable-postra-machine-sink",
     cl::desc("Disable PostRA Machine Sinking"));
 static cl::opt<bool> DisableLSR("disable-lsr", cl::Hidden,
     cl::desc("Disable Loop Strength Reduction Pass"));
+// RAISA (fork) device targets: the fork's `simt2simd` pass recognises a lane
+// address only while the base pointer is still `tid`-rooted.  Upstream LSR
+// rewrites an unrolled access chain into a pointer induction variable
+// (`phi ptr` + constant-offset GEPs), which hides that base, so the pass can no
+// longer vectorise the loop and the `read.reg.*` intrinsics survive into ISel
+// ("Don't know how to custom type legalize this intrinsic!").  The vendor's
+// forked LoopStrengthReduce does NOT rewrite that chain for RAISA (verified:
+// byte-identical LSR input, identical output under any other triple); we
+// reproduce that observable behaviour by not running LSR for this triple.
+// This is a lossy stopgap (one missed optimisation), not a faithful
+// reconstruction -- see docs/compiler/fork-source/reconstruction/README.md.
+// Escape hatch for A/B: -riscv-raisa-lsr.
+static cl::opt<bool> EnableLSRForRaisa(
+    "riscv-raisa-lsr", cl::Hidden,
+    cl::desc("Run Loop Strength Reduction for RAISA device targets"),
+    cl::init(false));
 static cl::opt<bool> DisableConstantHoisting("disable-constant-hoisting",
     cl::Hidden, cl::desc("Disable ConstantHoisting"));
 static cl::opt<bool> DisableCGP("disable-cgp", cl::Hidden,
@@ -834,7 +850,9 @@ void TargetPassConfig::addIRPasses() {
     addPass(createBasicAAWrapperPass());
 
     // Run loop strength reduction before anything else.
-    if (!DisableLSR) {
+    // (Skipped for RAISA device targets, see EnableLSRForRaisa above.)
+    if (!DisableLSR &&
+        !(TM->getTargetTriple().isRaisa() && !EnableLSRForRaisa)) {
       addPass(createCanonicalizeFreezeInLoopsPass());
       addPass(createLoopStrengthReducePass());
       if (EnableLoopTermFold)
