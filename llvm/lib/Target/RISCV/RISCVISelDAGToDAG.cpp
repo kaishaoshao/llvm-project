@@ -502,7 +502,11 @@ void RISCVDAGToDAGISel::selectVSETVLI(SDNode *Node) {
 
     if (auto *C = dyn_cast<ConstantSDNode>(VLOperand)) {
       uint64_t AVL = C->getZExtValue();
-      if (isUInt<5>(AVL)) {
+      // TX8/xtsm82s cannot encode vsetivli (it only re-encodes the vsetvli
+      // shape into custom-3 opcode 0x7b).  Keep the register AVL path so ISel
+      // materialises the AVL into a GPR and emits PseudoVSETVLI, which is what
+      // the vendor fork does.
+      if (isUInt<5>(AVL) && !Subtarget->hasVendorXTsm82s()) {
         SDValue VLImm = CurDAG->getTargetConstant(AVL, DL, XLenVT);
         ReplaceNode(Node, CurDAG->getMachineNode(RISCV::PseudoVSETIVLI, DL,
                                                  XLenVT, VLImm, VTypeIOp));
