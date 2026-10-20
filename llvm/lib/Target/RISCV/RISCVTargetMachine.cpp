@@ -143,6 +143,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   initializeRISCVVLOptimizerPass(*PR);
   initializeTX8InsertXFRMPass(*PR);
   initializeTX8TransformSIMTToSIMDPass(*PR);
+  initializeTX8LowerSharedLegacyPass(*PR);
   initializeRISCVVMV0EliminationPass(*PR);
   initializeRISCVInsertVSETVLIPass(*PR);
   initializeRISCVInsertReadWriteCSRPass(*PR);
@@ -523,6 +524,13 @@ void RISCVPassConfig::addIRPasses() {
   // fully optimised module).
   if (TM->getTargetTriple().isRaisa())
     addPass(createTX8TransformSIMTToSIMDPass());
+
+  // RAISA device kernels: give every `__attribute__((l0ashared|l0wshared|
+  // l1shared))` variable its concrete address and delete the global.  The
+  // vendor's `rpu-lower-shared` sits between `early-cse` and `callbrprepare`,
+  // i.e. immediately after `simt2simd` in this pipeline.
+  if (TM->getTargetTriple().isRaisa())
+    addPass(createTX8LowerSharedLegacyPass());
 }
 
 bool RISCVPassConfig::addPreISel() {

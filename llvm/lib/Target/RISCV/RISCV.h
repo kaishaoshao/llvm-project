@@ -124,6 +124,9 @@ void initializeTX8InsertXFRMPass(PassRegistry &);
 ModulePass *createTX8TransformSIMTToSIMDPass();
 void initializeTX8TransformSIMTToSIMDPass(PassRegistry &);
 
+ModulePass *createTX8LowerSharedLegacyPass();
+void initializeTX8LowerSharedLegacyPass(PassRegistry &);
+
 FunctionPass *createTX8RegisterRenamePass();
 void initializeTX8RegisterRenamePass(PassRegistry &);
 bool isTX8VRegRenameEnabled();
