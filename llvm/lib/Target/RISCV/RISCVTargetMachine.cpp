@@ -534,6 +534,15 @@ void RISCVPassConfig::addIRPasses() {
     // -print-before=config-instr-opt -mllvm -print-before=simt2simd` confirms.
     addPass(createTX8OptimizeConfigInstrsPass());
     addPass(createTX8TransformSIMTToSIMDPass());
+    // The vendor's pipeline runs `-domtree -early-cse` between `simt2simd` and
+    // `rpu-lower-shared` (verbatim from its own `-mllvm
+    // -debug-pass=Structure`), and that pass is observable: it folds the
+    // all-zero `getelementptr` the signature packing inserts in front of the
+    // first parameter load, and merges the identical tile-memory address
+    // chains `simt2simd` builds once per access.  Without it our
+    // `rpu-lower-shared` input keeps both, which is what made
+    // `mem_l1_size_*`'s register allocation differ from the vendor's.
+    addPass(createEarlyCSEPass());
   }
 
   // RAISA device kernels: give every `__attribute__((l0ashared|l0wshared|

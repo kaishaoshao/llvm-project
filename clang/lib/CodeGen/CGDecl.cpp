@@ -250,6 +250,15 @@ static std::string getStaticDeclName(CodeGenModule &CGM, const VarDecl &D) {
   return ContextName;
 }
 
+/// RAISA has no single `__shared__` attribute: the fork replaced CUDA's
+/// `CUDASharedAttr` with one attribute per tile memory space
+/// (L0A / L0W / L1).  They behave exactly like CUDA's shared attribute for
+/// code generation purposes.
+static bool isRAISASharedVar(const VarDecl &D) {
+  return D.hasAttr<RAISAL0ASharedAttr>() || D.hasAttr<RAISAL0WSharedAttr>() ||
+         D.hasAttr<RAISAL1SharedAttr>();
+}
+
 llvm::Constant *CodeGenModule::getOrCreateStaticVarDecl(
     const VarDecl &D, llvm::GlobalValue::LinkageTypes Linkage) {
   // In general, we don't always emit static var decls once before we reference
@@ -274,10 +283,14 @@ llvm::Constant *CodeGenModule::getOrCreateStaticVarDecl(
   unsigned TargetAS = getContext().getTargetAddressSpace(AS);
 
   // OpenCL variables in local address space and CUDA shared
-  // variables cannot have an initializer.
+  // variables cannot have an initializer.  The RAISA fork replaced CUDA's
+  // `__shared__` with one attribute per tile memory space, so the same rule
+  // applies to them (the vendor's own dump of a `l1shared` local variable is
+  // `internal addrspace(2) global [N x T] undef`).
   llvm::Constant *Init = nullptr;
   if (Ty.getAddressSpace() == LangAS::opencl_local ||
-      D.hasAttr<CUDASharedAttr>() || D.hasAttr<LoaderUninitializedAttr>())
+      D.hasAttr<CUDASharedAttr>() || isRAISASharedVar(D) ||
+      D.hasAttr<LoaderUninitializedAttr>())
     Init = llvm::UndefValue::get(LTy);
   else
     Init = EmitNullConstant(Ty);
@@ -429,8 +442,11 @@ void CodeGenFunction::EmitStaticVarDecl(const VarDecl &D,
   // a no-op and should not be emitted.
   bool isCudaSharedVar = getLangOpts().CUDA && getLangOpts().CUDAIsDevice &&
                          D.hasAttr<CUDASharedAttr>();
+  // The RAISA tile-memory attributes are the fork's replacement for CUDA's
+  // `__shared__`; the vendor drops their initializer the same way.
+  bool isRAISAShared = isRAISASharedVar(D);
   // If this value has an initializer, emit it.
-  if (D.getInit() && !isCudaSharedVar) {
+  if (D.getInit() && !isCudaSharedVar && !isRAISAShared) {
     ApplyAtomGroup Grp(getDebugInfo());
     var = AddInitializerToStaticVarDecl(D, var);
   }

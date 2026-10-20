@@ -54,6 +54,7 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/IntrinsicsRISCV.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MathExtras.h"
@@ -329,6 +330,198 @@ static bool indexedByTid(const Value *V, const Value *Tid) {
   return GEP->getOperand(1) == Tid;
 }
 
+/// The address spaces the vendor's pass treats as tile memory: the fork
+/// replaced CUDA's `__shared__` with one attribute per space, and
+/// `clang/lib/Basic/Targets/RISCV.h` maps raisa_{l1,l0a,l0w}shared onto 2 / 3 /
+/// 4 (the same numbers its own `rpu-lower-shared` bases 0x101000000 /
+/// 0x40000000 / 0x40100000 on).
+static bool isSharedAddressSpace(unsigned AS) {
+  return AS == 2 || AS == 3 || AS == 4;
+}
+
+/// The tile-memory variable a shared load/store accesses at offset 0, or null.
+///
+/// The operand is the pointer the frontend produces for `g[0]`, i.e. a
+/// constant expression `addrspacecast (ptr addrspace(2|3|4) @g to ptr)`,
+/// possibly under the all-zero `getelementptr` the array subscript leaves
+/// behind.  Verbatim from the vendor's `-print-before=simt2simd` IR:
+///   store volatile i32 %0, ptr addrspacecast (ptr addrspace(2) @_ZZ...scratch to ptr)
+/// Only the fully folded offset-0 form is understood: a surviving non-zero GEP
+/// would mean a constant byte offset, which no cell in the corpus produces.
+static GlobalVariable *sharedGlobalAt0(const Value *Ptr) {
+  if (const auto *GEP = dyn_cast<GEPOperator>(Ptr)) {
+    for (unsigned i = 1, e = GEP->getNumOperands(); i != e; ++i) {
+      const auto *CI = dyn_cast<ConstantInt>(GEP->getOperand(i));
+      if (!CI || !CI->isZero())
+        return nullptr;
+    }
+    Ptr = GEP->getPointerOperand();
+  }
+  if (const auto *CE = dyn_cast<ConstantExpr>(Ptr)) {
+    if (CE->getOpcode() != Instruction::AddrSpaceCast)
+      return nullptr;
+    Ptr = CE->getOperand(0);
+  } else if (const auto *ASC = dyn_cast<AddrSpaceCastInst>(Ptr)) {
+    Ptr = ASC->getPointerOperand();
+  } else {
+    return nullptr;
+  }
+  auto *GV = const_cast<GlobalVariable *>(dyn_cast<GlobalVariable>(Ptr));
+  if (!GV || !isSharedAddressSpace(GV->getAddressSpace()))
+    return nullptr;
+  return GV;
+}
+
+/// The lane width of a tile-memory access.  The vendor's pass re-slices the
+/// shared traffic to the width of the value the kernel finally writes out
+/// (`ElemTy`).  Besides the exactly-equal case it admits one wider shape, the
+/// corpus's `unsigned long` variable: its `i64` store becomes **two `i32`
+/// scatters** (low half at +0, high half at +4) and its `i64` load is gathered
+/// as a single `i32` (the following `trunc` is what selects the low half) --
+/// verbatim from the vendor's own `-print-after=simt2simd` on
+/// `mem_{l0a,l0w,l1}shared_u64_uniform`.
+static bool sharedAccessTyOK(Type *AccessTy, Type *ElemTy) {
+  if (AccessTy == ElemTy)
+    return true;
+  return AccessTy->isIntegerTy(64) && ElemTy->isIntegerTy(32);
+}
+
+/// A wider tile-memory load is only understood when every use narrows it to the
+/// lane width: the `trunc` is precisely what tells the vendor's pass that the
+/// low half is all that is demanded.
+static bool onlyUsedAsLaneTrunc(const LoadInst *LI, Type *ElemTy) {
+  if (LI->use_empty())
+    return false;
+  for (const User *U : LI->users()) {
+    const auto *TI = dyn_cast<TruncInst>(U);
+    if (!TI || TI->getType() != ElemTy)
+      return false;
+  }
+  return true;
+}
+
+/// `trunc` of a value this pass vectorised down to the lane width: the vendor
+/// works at lane width, so the truncation is dropped (`ToVec[trunc]` becomes
+/// the gathered lane vector itself).
+static bool isLaneTrunc(const Instruction *I, Type *ElemTy,
+                        const SmallPtrSetImpl<Value *> &Vectorised) {
+  return I->getOpcode() == Instruction::Trunc && I->getType() == ElemTy &&
+         Vectorised.count(const_cast<Value *>(I->getOperand(0)));
+}
+
+/// The vector counterpart of a plain integer binary op the vendor vectorises
+/// with one *scalar* operand: `v<op>.<lane>.<scalar>.i64(undef, %vec, %scalar,
+/// 128)`.  The corpus attests `and`/`mul`/`add` (the `control_*` family:
+/// `and i32 %tid, 1` -> `vand`, `mul i32 %v, 7` -> `vmul`, `add i32 %v, 3` ->
+/// `vadd`); every other opcode is left untransformed rather than guessed.
+static const char *vectorBinOpName(unsigned Opcode) {
+  switch (Opcode) {
+  case Instruction::Add: return "vadd";
+  case Instruction::Mul: return "vmul";
+  case Instruction::And: return "vand";
+  default:               return nullptr;
+  }
+}
+
+/// The vector counterpart of the `icmp` predicates the corpus uses.  Both take
+/// the compared vector plus one scalar and produce the lane mask
+/// `<vscale x 2 x i1>` (`control_divergent`: `icmp eq i32 %v, 0` -> `vmseq`;
+/// `control_nested`: `icmp ult i32 %tid, %n` -> `vmsltu`).
+static const char *vectorCmpName(CmpInst::Predicate P) {
+  switch (P) {
+  case CmpInst::ICMP_EQ:  return "vmseq";
+  case CmpInst::ICMP_ULT: return "vmsltu";
+  default:                return nullptr;
+  }
+}
+
+/// `op %vec, %scalar` where `%vec` is a vectorised lane value and `%scalar` is
+/// a constant (the `vi` shape).  The `vx` shape, where the scalar is a uniform
+/// *value*, is a different attested case (`abi_two_pointers`) and is handled by
+/// `isVectorScalarAdd` below.
+static bool isVectorConstOp(const Instruction *I, Type *ElemTy,
+                            const SmallPtrSetImpl<Value *> &Vectorised) {
+  if (!vectorBinOpName(I->getOpcode()) || I->getType() != ElemTy)
+    return false;
+  return Vectorised.count(const_cast<Value *>(I->getOperand(0))) &&
+         isa<ConstantInt>(I->getOperand(1));
+}
+
+/// `icmp <pred> %vec, %scalar`: the vendor turns it into the `vms*` family,
+/// whose result is a lane mask.  The scalar may be a constant
+/// (`icmp eq %v, 0`) or a uniform value (`icmp ult %tid, %n`, where `%n` is
+/// unpacked from the parameter block).
+static bool isLaneCmp(const Instruction *I,
+                      const SmallPtrSetImpl<Value *> &Vectorised,
+                      const SmallPtrSetImpl<Value *> &Uniform) {
+  const auto *CI = dyn_cast<ICmpInst>(I);
+  if (!CI || !vectorCmpName(CI->getPredicate()))
+    return false;
+  const Value *RHS = CI->getOperand(1);
+  return Vectorised.count(const_cast<Value *>(CI->getOperand(0))) &&
+         (isa<ConstantInt>(RHS) || Uniform.count(const_cast<Value *>(RHS)));
+}
+
+/// `select i1 %cond, %a, %b` where `%cond` is a lane mask this pass produced:
+/// the vendor emits `vmerge(undef, %b, %a, %cond, 128)` -- RVV's `vmerge` keeps
+/// the *second* operand where the mask is set, so the false value comes first.
+static bool isLaneSelect(const Instruction *I, Type *ElemTy,
+                         const SmallPtrSetImpl<Value *> &Vectorised) {
+  const auto *SI = dyn_cast<SelectInst>(I);
+  if (!SI || SI->getType() != ElemTy)
+    return false;
+  return Vectorised.count(const_cast<Value *>(SI->getCondition()));
+}
+
+/// Does \p V depend on a value this pass vectorises?  A conditional branch must
+/// stay a *uniform* branch, so this decides whether control flow is still
+/// scalar.  The vendor reaches that shape through its own
+/// `tx8-annotate-control-flow` pass, which rewrites a lane-dependent branch into
+/// `get.pred.mask` + `and.s` + `raisa.divergent` *before* `simt2simd`; this tree
+/// does not have that pass, so a kernel whose branch depends on a lane value is
+/// out of scope (the function is left untouched rather than turned into a
+/// branch on a vector value).
+static bool dependsOnVectorised(const Value *V,
+                                const SmallPtrSetImpl<Value *> &Vectorised) {
+  if (Vectorised.count(const_cast<Value *>(V)))
+    return true;
+  const auto *I = dyn_cast<Instruction>(V);
+  if (!I || !(isa<ICmpInst>(I) || isa<BinaryOperator>(I) || isa<CastInst>(I) ||
+              isa<SelectInst>(I)))
+    return false;
+  for (const Value *Op : I->operands())
+    if (dependsOnVectorised(Op, Vectorised))
+      return true;
+  return false;
+}
+
+/// RAISA intrinsics the vendor's pass leaves untouched: they are consumed by
+/// `legalize-exec`/ISel further down, not by this pass.  Verbatim from the
+/// `control_*` dumps (`raisa.get.kernel.entry.exec`, `mov128.s.v`, `nor.s`,
+/// `and.s`, `set.exec`, `raisa.divergent`).
+static bool isKeptScalarIntrinsic(Intrinsic::ID ID) {
+  switch (ID) {
+  case Intrinsic::riscv_raisa_get_kernel_entry_exec:
+  case Intrinsic::riscv_mov128_s_v:
+  case Intrinsic::riscv_and_s:
+  case Intrinsic::riscv_or_s:
+  case Intrinsic::riscv_xor_s:
+  case Intrinsic::riscv_andn_s:
+  case Intrinsic::riscv_orn_s:
+  case Intrinsic::riscv_nand_s:
+  case Intrinsic::riscv_nor_s:
+  case Intrinsic::riscv_xnor_s:
+  case Intrinsic::riscv_set_exec:
+  case Intrinsic::riscv_set_exec0:
+  case Intrinsic::riscv_set_exec1:
+  case Intrinsic::riscv_raisa_divergent:
+  case Intrinsic::riscv_kcore_ncc_read:
+    return true;
+  default:
+    return false;
+  }
+}
+
 /// A `load` this pass itself created while unpacking the parameter block:
 /// `load <ty>, ptr (getelementptr i8, ptr %block, <const>)`.  The body is
 /// already packed when `transform()` runs, so the validation loops have to skip
@@ -353,7 +546,8 @@ static bool isUniformScalarInst(const Instruction *I,
                                 const SmallPtrSetImpl<Value *> &Uniform) {
   if (!I->getType()->isSingleValueType() || I->getType()->isVectorTy())
     return false;
-  if (!isa<BinaryOperator>(I) && !isa<CastInst>(I) && !isa<ExtractValueInst>(I))
+  if (!isa<BinaryOperator>(I) && !isa<CastInst>(I) && !isa<ExtractValueInst>(I) &&
+      !isa<CmpInst>(I))
     return false;
   for (const Value *Op : I->operands())
     if (!isa<Constant>(Op) && !Uniform.count(const_cast<Value *>(Op)))
@@ -476,11 +670,6 @@ bool TX8TransformSIMTToSIMD::packKernelSignature(Function &F) {
 }
 
 bool TX8TransformSIMTToSIMD::transform(Function &F) {
-  // Only single-basic-block kernels are handled for now.
-  if (F.size() != 1)
-    return false;
-
-  BasicBlock &BB = F.getEntryBlock();
   Module &M = *F.getParent();
   LLVMContext &C = F.getContext();
   Type *Int32Ty = Type::getInt32Ty(C);
@@ -488,37 +677,49 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
   PointerType *PtrTy = PointerType::get(C, 0);
 
   // ---- locate the tid.x call -------------------------------------------
+  // The kernels are rewritten basic block by basic block (the vendor's pass
+  // keeps the CFG: `control_nested`'s branch on `raisa.divergent` survives
+  // verbatim while both of its arms are vectorised), so the two values that
+  // drive the transform are looked up function-wide.
   CallInst *Tid = nullptr;
-  for (Instruction &I : BB) {
-    auto *CI = dyn_cast<CallInst>(&I);
-    if (!CI)
-      continue;
-    Function *Callee = CI->getCalledFunction();
-    if (!Callee)
-      return false;
-    if (Callee->getIntrinsicID() == Intrinsic::riscv_read_reg_tid_x) {
-      Tid = CI;
-      break;
+  for (BasicBlock &BB : F) {
+    for (Instruction &I : BB) {
+      auto *CI = dyn_cast<CallInst>(&I);
+      if (!CI)
+        continue;
+      Function *Callee = CI->getCalledFunction();
+      if (!Callee)
+        return false;
+      if (Callee->getIntrinsicID() == Intrinsic::riscv_read_reg_tid_x) {
+        Tid = CI;
+        break;
+      }
     }
+    if (Tid)
+      break;
   }
   if (!Tid)
     return false;
 
   // ---- element type, from the first tid-indexed load/store -------------
   Type *ElemTy = nullptr;
-  for (Instruction &I : BB) {
-    if (auto *LI = dyn_cast<LoadInst>(&I)) {
-      if (indexedByTid(LI->getPointerOperand(), Tid)) {
-        ElemTy = LI->getType();
-        break;
+  for (BasicBlock &BB : F) {
+    for (Instruction &I : BB) {
+      if (auto *LI = dyn_cast<LoadInst>(&I)) {
+        if (indexedByTid(LI->getPointerOperand(), Tid)) {
+          ElemTy = LI->getType();
+          break;
+        }
+      }
+      if (auto *SI = dyn_cast<StoreInst>(&I)) {
+        if (indexedByTid(SI->getPointerOperand(), Tid)) {
+          ElemTy = SI->getValueOperand()->getType();
+          break;
+        }
       }
     }
-    if (auto *SI = dyn_cast<StoreInst>(&I)) {
-      if (indexedByTid(SI->getPointerOperand(), Tid)) {
-        ElemTy = SI->getValueOperand()->getType();
-        break;
-      }
-    }
+    if (ElemTy)
+      break;
   }
   if (!ElemTy || !ElemTy->isSingleValueType())
     return false;
@@ -541,7 +742,8 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
   SmallPtrSet<Value *, 16> WillMap, Vectorised, Uniform;
   for (Argument &A : F.args())
     Uniform.insert(&A);  // the packed parameter block
-  for (Instruction &I : BB) {
+  for (BasicBlock &BB : F) {
+   for (Instruction &I : BB) {
     if (auto *LI = dyn_cast<LoadInst>(&I)) {
       if (isPackedParamLoad(LI)) {
         Uniform.insert(LI);  // pass-created parameter unpacking
@@ -552,13 +754,39 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
         Vectorised.insert(LI);
         continue;
       }
+      // A tile-memory load becomes a gather against the address vector the
+      // pass builds for that variable (`vluxei.sync`), with the lane width of
+      // the value the kernel finally writes out.  A wider load is admitted
+      // only when every use narrows it back to that width.
+      if (sharedGlobalAt0(LI->getPointerOperand()) &&
+          sharedAccessTyOK(LI->getType(), ElemTy) &&
+          (LI->getType() == ElemTy || onlyUsedAsLaneTrunc(LI, ElemTy))) {
+        WillMap.insert(LI);
+        Vectorised.insert(LI);
+        continue;
+      }
       return false;
     }
     if (auto *SI = dyn_cast<StoreInst>(&I)) {
-      if (!indexedByTid(SI->getPointerOperand(), Tid) ||
-          !WillMap.count(SI->getValueOperand()))
-        return false;
-      continue;
+      if (indexedByTid(SI->getPointerOperand(), Tid) &&
+          WillMap.count(SI->getValueOperand()))
+        continue;
+      // The tile-memory counterparts of the two cases above: the stored value
+      // is either a per-lane value (a `vid`, a vectorised load) or a constant
+      // the pass splats with `vmv.v.x`.  The vendor splats the constant
+      // `scratch[0] = 7` of `mem_*shared_u{32}_uniform` and the `vid` of
+      // `mem_l1_size_*`; a *uniform scalar expression* stored to tile memory
+      // has no evidence, so it stays untransformed.  A value wider than one
+      // lane must be a constant (that is the only wider shape attested).
+      if (sharedGlobalAt0(SI->getPointerOperand())) {
+        Value *V = SI->getValueOperand();
+        if (sharedAccessTyOK(V->getType(), ElemTy) &&
+            (V->getType() == ElemTy
+                 ? (Vectorised.count(V) || isa<ConstantInt>(V))
+                 : isa<ConstantInt>(V)))
+          continue;
+      }
+      return false;
     }
     if (auto *CI = dyn_cast<CallInst>(&I)) {
       Function *Callee = CI->getCalledFunction();
@@ -574,6 +802,28 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
           Vectorised.insert(CI);
         else
           Uniform.insert(CI);
+        continue;
+      }
+      if (Callee->getIntrinsicID() == Intrinsic::riscv_get_pred_mask) {
+        // `get.pred.mask(i1 %cmp)` becomes `mov128.s.v` of the *lane mask* the
+        // comparison turned into (`control_nested`: `%cmp = icmp ult %tid, %n`
+        // -> `vmsltu` -> `mov128.s.v`), i.e. a 128-bit scalar mask either way.
+        if (CI->arg_size() != 1 ||
+            !Vectorised.count(CI->getArgOperand(0)))
+          return false;
+        WillMap.insert(CI);
+        Vectorised.insert(CI);
+        continue;
+      }
+      if (isKeptScalarIntrinsic(Callee->getIntrinsicID())) {
+        // Left verbatim; every operand must already be a value this pass keeps
+        // (a constant, an argument, or something it maps without changing the
+        // 128-bit-mask shape).
+        for (Value *A : CI->args())
+          if (!isa<Constant>(A) && !WillMap.count(A))
+            return false;
+        WillMap.insert(CI);
+        Uniform.insert(CI);
         continue;
       }
       if (!isSupportedScalar(Callee->getIntrinsicID()))
@@ -594,8 +844,35 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
       Vectorised.insert(CI);
       continue;
     }
-    if (isa<ReturnInst>(I) || isa<GetElementPtrInst>(I) || isa<BitCastInst>(I))
+    if (isa<ReturnInst>(I) || isa<BranchInst>(I) || isa<GetElementPtrInst>(I) ||
+        isa<BitCastInst>(I))
       continue;
+    // `trunc` of a wider tile-memory gather down to the lane width: the vendor
+    // works at lane width, so the truncation disappears.
+    if (isLaneTrunc(&I, ElemTy, Vectorised)) {
+      WillMap.insert(&I);
+      Vectorised.insert(&I);
+      continue;
+    }
+    // `control_*`: arithmetic against a constant becomes a vector op with a
+    // scalar operand, a comparison against one becomes a lane mask, and a
+    // `select` on that mask becomes `vmerge`.
+    if (isVectorConstOp(&I, ElemTy, Vectorised)) {
+      WillMap.insert(&I);
+      Vectorised.insert(&I);
+      continue;
+    }
+    if (isLaneCmp(&I, Vectorised, Uniform)) {
+      WillMap.insert(&I);
+      Vectorised.insert(&I);
+      continue;
+    }
+    if (isLaneSelect(&I, ElemTy, Vectorised) &&
+        Vectorised.count(I.getOperand(1)) && Vectorised.count(I.getOperand(2))) {
+      WillMap.insert(&I);
+      Vectorised.insert(&I);
+      continue;
+    }
     // Scalar (uniform) arithmetic is kept scalar and splatted at the store --
     // as long as none of its operands is being vectorised (`abi_float`,
     // `abi_ints`, `abi_struct`, `abi_pointer_*`).  `abi_two_pointers` is the
@@ -615,18 +892,35 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
       continue;
     }
     return false;
+   }
   }
 
-  for (Instruction &I : BB) {
+  // Control flow has to stay uniform (see dependsOnVectorised): this runs
+  // after the whole function has been classified, so a branch depending on a
+  // value vectorised in *another* block is caught too.
+  for (BasicBlock &BB : F)
+    for (Instruction &I : BB) {
+      const auto *BR = dyn_cast<BranchInst>(&I);
+      if (BR && BR->isConditional() &&
+          dependsOnVectorised(BR->getCondition(), Vectorised))
+        return false;
+    }
+
+  for (BasicBlock &BB : F) {
+   for (Instruction &I : BB) {
     if (isa<LoadInst>(I)) {
       if (isPackedParamLoad(cast<LoadInst>(&I)))
         continue;  // pass-created parameter unpacking
+      if (sharedGlobalAt0(I.getOperand(0)))
+        continue;  // tile-memory gather (checked in the first loop)
       if (!indexedByTid(I.getOperand(0), Tid) ||
           cast<LoadInst>(I).getType() != ElemTy)
         return false;
       continue;
     }
     if (isa<StoreInst>(I)) {
+      if (sharedGlobalAt0(I.getOperand(1)))
+        continue;  // tile-memory scatter (checked in the first loop)
       if (!indexedByTid(I.getOperand(1), Tid) ||
           I.getOperand(0)->getType() != ElemTy)
         return false;
@@ -637,11 +931,23 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
       if (!Callee)
         return false;
       if (!isSupportedScalar(Callee->getIntrinsicID()) &&
-          !lookupReadReg(Callee->getIntrinsicID()))
+          !lookupReadReg(Callee->getIntrinsicID()) &&
+          Callee->getIntrinsicID() != Intrinsic::riscv_get_pred_mask &&
+          !isKeptScalarIntrinsic(Callee->getIntrinsicID()))
         return false;
       continue;
     }
-    if (isa<ReturnInst>(I) || isa<GetElementPtrInst>(I) || isa<BitCastInst>(I))
+    if (isa<ReturnInst>(I) || isa<BranchInst>(I) || isa<GetElementPtrInst>(I) ||
+        isa<BitCastInst>(I))
+      continue;
+    if (isLaneTrunc(&I, ElemTy, Vectorised))
+      continue;
+    if (isVectorConstOp(&I, ElemTy, Vectorised))
+      continue;
+    if (isLaneCmp(&I, Vectorised, Uniform))
+      continue;
+    if (isLaneSelect(&I, ElemTy, Vectorised) &&
+        Vectorised.count(I.getOperand(1)) && Vectorised.count(I.getOperand(2)))
       continue;
     if (isUniformScalarInst(&I, Uniform))
       continue;
@@ -649,6 +955,7 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
       continue;
     // Anything else (branches, phis, ...) is out of scope.
     return false;
+   }
   }
 
   // ---- rewrite the body -------------------------------------------------
@@ -668,6 +975,104 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
         M, ("llvm.riscv.vse." + VT + ".p0.i64").c_str(),
         FunctionType::get(Type::getVoidTy(C), {VecTy, PtrTy, Int64Ty}, false));
   };
+  // `vmv.v.x.<lane>.i64`: the splat the vendor uses for every scalar value
+  // that ends up in a vector (a tid-indexed store of a uniform scalar, and the
+  // value half of a tile-memory scatter).
+  auto GetVMV = [&](Type *ScalarTy) {
+    return declareRVV(M, ("llvm.riscv.vmv.v.x." + VT + ".i64").c_str(),
+                      FunctionType::get(VecTy, {VecTy, ScalarTy, Int64Ty},
+                                        false));
+  };
+
+  // ---- tile-memory (shared) addressing -----------------------------------
+  // The vendor's pass turns every access to a `l0ashared`/`l0wshared`/
+  // `l1shared` variable into an indexed gather/scatter whose index vector *is*
+  // the absolute address of the variable:
+  //
+  //   %h = lshr i64 ptrtoint (ptr addrspacecast (ptr addrspace(2) @g to ptr)
+  //                           to i64), 32
+  //   %t = trunc i64 %h to i32
+  //   %l = call <vscale x 2 x i32> @llvm.riscv.vmv.v.x.nxv2i32.i64(
+  //            <vscale x 2 x i32> undef,
+  //            i32 ptrtoint (ptr addrspacecast (ptr addrspace(2) @g to ptr)
+  //                          to i32), i64 128)
+  //   %i = call <vscale x 2 x i64> @llvm.riscv.vslh.nxv2i64.nxv2i32.i32.i64(
+  //            <vscale x 2 x i64> undef, <vscale x 2 x i32> %l, i32 %t, i64 128)
+  //   call void @llvm.riscv.vsuxei.sync...(<lane> %v, ptr null, <nxv2i64> %i, i64 128)
+  //
+  // The `@g` operands are *constant expressions*: `rpu-lower-shared` (which
+  // runs after this pass) is what later materialises them into the
+  // `addrspacecast(inttoptr(...))` chains and gives each variable its concrete
+  // base address.  The chain is built once **per access**, not once per
+  // variable: the vendor's own `-print-after=simt2simd` module still has a
+  // separate copy for the load of `mem_l1_size_1`, and the single copy visible
+  // in `wt-raisa-r2/recon/rpu_lower_shared/*.in.ll` is `early-cse` merging the
+  // identical chains in between.
+  VectorType *IdxTy = VectorType::get(Int64Ty, ElementCount::getScalable(2));
+  // The lane mask type of a vectorised comparison, `<vscale x 2 x i1>`.
+  VectorType *MaskTy =
+      VectorType::get(Type::getInt1Ty(C), ElementCount::getScalable(2));
+  // The 128-bit scalar mask the `control_*` family passes around.
+  Type *Mask128Ty = FixedVectorType::get(IntegerType::get(C, 128), 1);
+  auto GetVSLH = [&]() {
+    return declareRVV(
+        M, ("llvm.riscv.vslh.nxv2i64." + VT + ".i32.i64").c_str(),
+        FunctionType::get(IdxTy, {IdxTy, VecTy, Int32Ty, Int64Ty}, false));
+  };
+  auto GetVSUXEI = [&]() {
+    return declareRVV(
+        M, ("llvm.riscv.vsuxei.sync." + VT + ".p0.nxv2i64.i64").c_str(),
+        FunctionType::get(Type::getVoidTy(C), {VecTy, PtrTy, IdxTy, Int64Ty},
+                          false));
+  };
+  auto GetVLUXEI = [&]() {
+    return declareRVV(
+        M, ("llvm.riscv.vluxei.sync." + VT + ".p0.nxv2i64.i64").c_str(),
+        FunctionType::get(VecTy, {VecTy, PtrTy, IdxTy, Int64Ty}, false));
+  };
+  // Only used by the two-chunk `i64` shape, where the second scatter's index is
+  // the low address vector plus the lane size.
+  auto GetVADD = [&]() {
+    return declareRVV(
+        M, ("llvm.riscv.vadd." + VT + ".i32.i64").c_str(),
+        FunctionType::get(VecTy, {VecTy, VecTy, Int32Ty, Int64Ty}, false));
+  };
+  /// The two halves of one access's address chain: the low 32 bits broadcast to
+  /// the lanes and the high 32 bits as a scalar (the vendor splits the address
+  /// `vslh(low_vec, high)` back together inside the CPU).
+  struct SharedAddr {
+    Value *Low;
+    Value *Hi;
+  };
+  auto SharedAddressBase = [&](GlobalVariable *GV,
+                               Instruction *At) -> SharedAddr {
+    Constant *Cast = ConstantExpr::getAddrSpaceCast(GV, PtrTy);
+    Constant *Lo = ConstantExpr::getPtrToInt(Cast, Int32Ty);
+    Constant *Hi64 = ConstantExpr::getPtrToInt(Cast, Int64Ty);
+    IRBuilder<> IB(At);
+    Value *Shr = IB.CreateLShr(Hi64, IB.getInt64(32));
+    Value *Hi = IB.CreateTrunc(Shr, Int32Ty);
+    Value *Splat =
+        IB.CreateCall(GetVMV(Int32Ty), {UndefValue::get(VecTy), Lo,
+                                        IB.getInt64(SIMT_LANES)});
+    return {Splat, Hi};
+  };
+  /// The index vector of the lane chunk starting at \p ByteOffset: the offset is
+  /// added to the *low* half and `vslh`ed against the same high half -- for a
+  /// chunk of 0 that is the whole chain the vendor emits for a single-lane
+  /// access.
+  auto SharedIndex = [&](const SharedAddr &A, uint64_t ByteOffset,
+                         Instruction *At) -> Value * {
+    IRBuilder<> IB(At);
+    Value *Low = A.Low;
+    if (ByteOffset)
+      Low = IB.CreateCall(GetVADD(), {UndefValue::get(VecTy), Low,
+                                      IB.getInt32(ByteOffset),
+                                      IB.getInt64(SIMT_LANES)});
+    return IB.CreateCall(GetVSLH(), {UndefValue::get(IdxTy), Low, A.Hi,
+                                     IB.getInt64(SIMT_LANES)});
+  };
+  Value *NullBase = ConstantPointerNull::get(PtrTy);
 
   DenseMap<Value *, Value *> ToVec;
   // The all-zero lane vector the reduction lowering ORs against, materialised
@@ -684,13 +1089,26 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
   };
 
   SmallVector<Instruction *, 16> Work;
-  for (Instruction &I : BB)
-    Work.push_back(&I);
+  for (BasicBlock &BB : F)
+    for (Instruction &I : BB)
+      Work.push_back(&I);
 
   for (Instruction *I : Work) {
-    if (I->getParent() != &BB)
-      continue;  // already replaced
+    if (!I->getParent())
+      continue;  // already erased by an earlier replacement
     if (auto *LI = dyn_cast<LoadInst>(I)) {
+      if (GlobalVariable *GV = sharedGlobalAt0(LI->getPointerOperand())) {
+        // A load wider than one lane gathers only the low chunk -- the `trunc`
+        // that consumes it is dropped by the lane-trunc case below.
+        SharedAddr A = SharedAddressBase(GV, LI);
+        Value *Idx = SharedIndex(A, 0, LI);
+        IRBuilder<> IB(LI);
+        ToVec[LI] = IB.CreateCall(GetVLUXEI(),
+                                  {UndefValue::get(VecTy), NullBase, Idx,
+                                   IB.getInt64(SIMT_LANES)});
+        ToErase.push_back(LI);
+        continue;
+      }
       if (!indexedByTid(LI->getPointerOperand(), Tid))
         continue;  // parameter-extraction load, not a lane load
       Value *Base = cast<GetElementPtrInst>(LI->getPointerOperand())
@@ -706,6 +1124,56 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
       continue;
     }
     if (auto *SI = dyn_cast<StoreInst>(I)) {
+      if (GlobalVariable *GV = sharedGlobalAt0(SI->getPointerOperand())) {
+        Value *Val = SI->getValueOperand();
+        IRBuilder<> IB(SI);
+        uint64_t LaneBytes = M.getDataLayout().getTypeAllocSize(ElemTy);
+        if (Val->getType() != ElemTy) {
+          // Wider than one lane (`unsigned long`): the vendor writes it as one
+          // `i32` scatter per lane chunk, and emits **all** the value splats
+          // first, then the address chain, then the scatters.
+          auto *C = dyn_cast<ConstantInt>(Val);
+          if (!C)
+            return false;
+          uint64_t Chunks =
+              M.getDataLayout().getTypeAllocSize(Val->getType()) / LaneBytes;
+          SmallVector<Value *, 2> Stored;
+          for (uint64_t i = 0; i != Chunks; ++i) {
+            APInt Bits = C->getValue().lshr(i * 32).trunc(32);
+            Stored.push_back(IB.CreateCall(
+                GetVMV(ElemTy), {UndefValue::get(VecTy),
+                                 ConstantInt::get(ElemTy, Bits),
+                                 IB.getInt64(SIMT_LANES)}));
+          }
+          SharedAddr A = SharedAddressBase(GV, SI);
+          for (uint64_t i = 0; i != Chunks; ++i) {
+            Value *Idx = SharedIndex(A, i * LaneBytes, SI);
+            IB.CreateCall(GetVSUXEI(),
+                          {Stored[i], NullBase, Idx, IB.getInt64(SIMT_LANES)});
+          }
+          ToErase.push_back(SI);
+          continue;
+        }
+        // The address chain is built first, then the value the lane stores,
+        // then the scatter.
+        Value *Idx = SharedIndex(SharedAddressBase(GV, SI), 0, SI);
+        Value *Stored = nullptr;
+        auto It = ToVec.find(Val);
+        if (It != ToVec.end())
+          Stored = It->second;
+        else if (auto *C = dyn_cast<ConstantInt>(Val))
+          Stored = IB.CreateCall(GetVMV(C->getType()),
+                                 {UndefValue::get(VecTy), C,
+                                  IB.getInt64(SIMT_LANES)});
+        else
+          Stored = IB.CreateCall(GetVMV(Val->getType()),
+                                 {UndefValue::get(VecTy), Val,
+                                  IB.getInt64(SIMT_LANES)});
+        IB.CreateCall(GetVSUXEI(),
+                      {Stored, NullBase, Idx, IB.getInt64(SIMT_LANES)});
+        ToErase.push_back(SI);
+        continue;
+      }
       if (!indexedByTid(SI->getPointerOperand(), Tid))
         continue;
       Value *Val = SI->getValueOperand();
@@ -749,6 +1217,72 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
     // spelled exactly like the vendor's --
     //   %8 = call <vscale x 2 x i32> @llvm.riscv.vadd.nxv2i32.i32.i64(
     //            <vscale x 2 x i32> undef, <vscale x 2 x i32> %7, i32 %6, i64 128)
+    // A `trunc` of a wider tile-memory gather to the lane width: the pass works
+    // at lane width, so the truncation is simply dropped and its users see the
+    // gathered lane vector (`mem_*shared_u64_uniform`).
+    if (isLaneTrunc(I, ElemTy, Vectorised)) {
+      auto It = ToVec.find(I->getOperand(0));
+      if (It == ToVec.end())
+        return false;
+      ToVec[I] = It->second;
+      ToErase.push_back(I);
+      continue;
+    }
+    // `control_*`: arithmetic against a constant, the comparison that consumes
+    // it, and the `select` on the resulting lane mask.
+    if (isVectorConstOp(I, ElemTy, Vectorised)) {
+      Value *Lane = I->getOperand(0);
+      auto It = ToVec.find(Lane);
+      const char *ScalarName = intTypeName(ElemTy);
+      auto *C = cast<ConstantInt>(I->getOperand(1));
+      if (It == ToVec.end() || !ScalarName)
+        return false;
+      IRBuilder<> IB(I);
+      FunctionCallee VOp = declareRVV(
+          M, ("llvm.riscv." + std::string(vectorBinOpName(I->getOpcode())) +
+              "." + VT + "." + ScalarName + ".i64").c_str(),
+          FunctionType::get(VecTy, {VecTy, VecTy, ElemTy, Int64Ty}, false));
+      ToVec[I] = IB.CreateCall(VOp, {UndefValue::get(VecTy), It->second, C,
+                                     IB.getInt64(SIMT_LANES)});
+      ToErase.push_back(I);
+      continue;
+    }
+    if (isLaneCmp(I, Vectorised, Uniform)) {
+      auto *Cmp = cast<ICmpInst>(I);
+      auto It = ToVec.find(Cmp->getOperand(0));
+      if (It == ToVec.end())
+        return false;
+      IRBuilder<> IB(I);
+      FunctionCallee VCmp = declareRVV(
+          M, ("llvm.riscv." + std::string(vectorCmpName(Cmp->getPredicate())) +
+              "." + VT + "." + intTypeName(ElemTy) + ".i64").c_str(),
+          FunctionType::get(MaskTy, {VecTy, ElemTy, Int64Ty}, false));
+      ToVec[I] = IB.CreateCall(VCmp, {It->second, Cmp->getOperand(1),
+                                      IB.getInt64(SIMT_LANES)});
+      ToErase.push_back(I);
+      continue;
+    }
+    if (isLaneSelect(I, ElemTy, Vectorised) &&
+        Vectorised.count(I->getOperand(1)) && Vectorised.count(I->getOperand(2))) {
+      auto ItT = ToVec.find(I->getOperand(1));
+      auto ItF = ToVec.find(I->getOperand(2));
+      auto ItC = ToVec.find(I->getOperand(0));
+      if (ItT == ToVec.end() || ItF == ToVec.end() || ItC == ToVec.end())
+        return false;
+      IRBuilder<> IB(I);
+      FunctionCallee VMerge = declareRVV(
+          M, ("llvm.riscv.vmerge." + VT + "." + VT + ".i64").c_str(),
+          FunctionType::get(VecTy, {VecTy, VecTy, VecTy, MaskTy, Int64Ty},
+                            false));
+      // `vmerge` keeps the *second* operand where the mask is set, so the
+      // select's false value comes first -- verbatim from the vendor:
+      //   select i1 %c, %mul, %add -> vmerge(undef, %add, %mul, %c, 128)
+      ToVec[I] = IB.CreateCall(VMerge, {UndefValue::get(VecTy), ItF->second,
+                                        ItT->second, ItC->second,
+                                        IB.getInt64(SIMT_LANES)});
+      ToErase.push_back(I);
+      continue;
+    }
     if (isVectorScalarAdd(I, ElemTy, Vectorised, Uniform)) {
       Value *Lane = I->getOperand(0);
       Value *UniformOp = I->getOperand(1);
@@ -801,6 +1335,25 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
       ToErase.push_back(CI);
       continue;
     }
+
+    if (Src == Intrinsic::riscv_get_pred_mask) {
+      // The lane mask is already vectorised; what changes is its *type*: the
+      // vendor wraps it in a 128-bit scalar mask with `mov128.s.v`
+      // (`control_nested`: `vmsltu` -> `mov128.s.v`).
+      auto It = ToVec.find(CI->getArgOperand(0));
+      if (It == ToVec.end())
+        return false;
+      IRBuilder<> IB(CI);
+      FunctionCallee Mov = declareRVV(
+          M, "llvm.riscv.mov128.s.v.nxv2i1",
+          FunctionType::get(Mask128Ty, {MaskTy}, false));
+      CallInst *New = IB.CreateCall(Mov, {It->second});
+      CI->replaceAllUsesWith(New);
+      ToErase.push_back(CI);
+      continue;
+    }
+    if (isKeptScalarIntrinsic(Src))
+      continue;  // left verbatim (its operands were replaced in place)
 
     MappedOp Op = mappedOpFor(Src);
     if (!Op.Base && !Op.Div && Op.Reduce == MappedOp::NoReduce)
@@ -873,7 +1426,7 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
       // after-pass IR, ahead of the parameter unpacking:
       //   %1 = call <vscale x 2 x i32> @llvm.riscv.vmv.v.x.nxv2i32.i64(undef, i32 0, i64 128)
       if (!Zero) {
-        IRBuilder<> EB(&*BB.getFirstInsertionPt());
+        IRBuilder<> EB(&*F.getEntryBlock().getFirstInsertionPt());
         auto *ZTy = cast<VectorType>(VTI);
         FunctionCallee VMVZero = declareRVV(
             M, ("llvm.riscv.vmv.v.x." + vecName(ZTy) + ".i64").c_str(),
@@ -997,12 +1550,13 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
   // Now that no replacement refers to the scalar values, drop the replaced
   // instructions (uses first, definitions second) and any dead GEPs.
   for (Instruction *I : reverse(ToErase)) {
-    if (I->getParent() == &BB)
+    if (I->getParent())
       I->eraseFromParent();
   }
-  for (Instruction &I : make_early_inc_range(BB))
-    if (I.use_empty() && isa<GetElementPtrInst>(I))
-      I.eraseFromParent();
+  for (BasicBlock &BB : F)
+    for (Instruction &I : make_early_inc_range(BB))
+      if (I.use_empty() && isa<GetElementPtrInst>(I))
+        I.eraseFromParent();
 
   return true;
 }

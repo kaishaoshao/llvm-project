@@ -5571,6 +5571,19 @@ LangAS CodeGenModule::GetGlobalVarAddressSpace(const VarDecl *D) {
     return LangAS::cuda_device;
   }
 
+  if (LangOpts.RAISA && D) {
+    // The RAISA fork replaced CUDA's single `__shared__` attribute with one
+    // attribute per tile memory space; the address spaces themselves are the
+    // ones `Targets/RISCV.h` assigns to those language address spaces
+    // (raisa_l1shared -> 2, raisa_l0ashared -> 3, raisa_l0wshared -> 4).
+    if (D->hasAttr<RAISAL0ASharedAttr>())
+      return LangAS::raisa_l0ashared;
+    if (D->hasAttr<RAISAL0WSharedAttr>())
+      return LangAS::raisa_l0wshared;
+    if (D->hasAttr<RAISAL1SharedAttr>())
+      return LangAS::raisa_l1shared;
+  }
+
   if (LangOpts.OpenMP) {
     LangAS AS;
     if (OpenMPRuntime->hasAllocateAttributeForGlobalVar(D, AS))

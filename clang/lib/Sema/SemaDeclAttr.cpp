@@ -5176,16 +5176,28 @@ static void handleRAISASharedAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   switch (AL.getKind()) {
   case ParsedAttr::AT_RAISAL0AShared:
     D->addAttr(::new (S.Context) RAISAL0ASharedAttr(S.Context, AL));
-    return;
+    break;
   case ParsedAttr::AT_RAISAL0WShared:
     D->addAttr(::new (S.Context) RAISAL0WSharedAttr(S.Context, AL));
-    return;
+    break;
   case ParsedAttr::AT_RAISAL1Shared:
     D->addAttr(::new (S.Context) RAISAL1SharedAttr(S.Context, AL));
-    return;
+    break;
   default:
     llvm_unreachable("not a RAISA shared-memory attribute");
   }
+
+  // A variable in tile memory is *shared* memory, so it has static storage
+  // duration -- the same rule CUDA applies to `__shared__` (CUDA B.2.5, see
+  // ActOnVariableDeclarator).  The address space is *not* put on the type:
+  // CUDA's `__shared__` keeps a plain type and lets
+  // `CodeGenModule::GetGlobalVarAddressSpace()` pick `cuda_shared`; RAISA does
+  // the same with its one-attribute-per-space spelling (see the RAISA branch
+  // there).  A type-level address space would additionally have to be taught to
+  // the Itanium mangler.
+  auto *VD = dyn_cast<VarDecl>(D);
+  if (VD && VD->getStorageClass() == SC_None && VD->isLocalVarDecl())
+    VD->setStorageClass(SC_Static);
 }
 
 static void handleRAISAMemorySpaceAttr(Sema &S, Decl *D,
