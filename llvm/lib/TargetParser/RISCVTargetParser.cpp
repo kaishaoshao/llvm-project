@@ -158,7 +158,12 @@ namespace RISCVVType {
 // 5:3  | vsew[2:0]  | Standard element width (SEW) setting
 // 2:0  | vlmul[2:0] | Vector register group multiplier (LMUL) setting
 unsigned encodeVTYPE(VLMUL VLMul, unsigned SEW, bool TailAgnostic,
-                     bool MaskAgnostic) {
+                     bool MaskAgnostic
+#ifdef __TSM_RISCV__
+                     ,
+                     bool BF16Fmt
+#endif
+) {
   assert(isValidSEW(SEW) && "Invalid SEW");
   unsigned VLMulBits = static_cast<unsigned>(VLMul);
   unsigned VSEWBits = encodeSEW(SEW);
@@ -167,6 +172,11 @@ unsigned encodeVTYPE(VLMUL VLMul, unsigned SEW, bool TailAgnostic,
     VTypeI |= 0x40;
   if (MaskAgnostic)
     VTypeI |= 0x80;
+#ifdef __TSM_RISCV__
+  // Bit 8 selects the BF16 element format (see isBF16Fmt() in the header).
+  if (BF16Fmt)
+    VTypeI |= 0x100;
+#endif
 
   return VTypeI;
 }
