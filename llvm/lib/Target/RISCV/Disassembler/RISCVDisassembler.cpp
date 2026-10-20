@@ -88,7 +88,7 @@ static DecodeStatus DecodeGPRRegisterClass(MCInst &Inst, uint32_t RegNo,
   return MCDisassembler::Success;
 }
 
-static DecodeStatus DecodeSRRegisterClass(MCInst &Inst, uint32_t RegNo,
+static DecodeStatus DecodeSRF128RegisterClass(MCInst &Inst, uint32_t RegNo,
                                           uint64_t Address,
                                           const MCDisassembler *Decoder) {
   if (RegNo >= 32)
