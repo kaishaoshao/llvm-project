@@ -4927,6 +4927,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                     C.isOffloadingHostKind(Action::OFK_Cuda)));
 
   bool IsRDCMode =
+      Args.hasFlag(options::OPT_frpu_rdc, options::OPT_fno_rpu_rdc, false) ||
       Args.hasFlag(options::OPT_fgpu_rdc, options::OPT_fno_gpu_rdc, false);
 
   auto LTOMode = IsDeviceOffloadAction ? D.getOffloadLTOMode() : D.getLTOMode();
