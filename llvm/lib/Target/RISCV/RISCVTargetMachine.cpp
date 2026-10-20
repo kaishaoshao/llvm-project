@@ -142,6 +142,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   initializeRISCVVectorPeepholePass(*PR);
   initializeRISCVVLOptimizerPass(*PR);
   initializeTX8InsertXFRMPass(*PR);
+  initializeTX8OptimizeConfigInstrsPass(*PR);
   initializeTX8TransformSIMTToSIMDPass(*PR);
   initializeTX8LowerSharedLegacyPass(*PR);
   initializeRISCVVMV0EliminationPass(*PR);
@@ -522,8 +523,15 @@ void RISCVPassConfig::addIRPasses() {
   // uses, so `-print-before/after=simt2simd` works.  Runs last in the IR
   // pipeline, which is where the vendor's pass sits (its `before` IR is the
   // fully optimised module).
-  if (TM->getTargetTriple().isRaisa())
+  if (TM->getTargetTriple().isRaisa()) {
+    // RAISA device path: drop configuration-instruction writes whose value is
+    // already the value of the configuration slot (and hoist loop-invariant
+    // ones).  Vendor pass name `config-instr-opt`; the vendor inserts it after
+    // the loop passes and *before* `simt2simd`, which `-mllvm
+    // -print-before=config-instr-opt -mllvm -print-before=simt2simd` confirms.
+    addPass(createTX8OptimizeConfigInstrsPass());
     addPass(createTX8TransformSIMTToSIMDPass());
+  }
 
   // RAISA device kernels: give every `__attribute__((l0ashared|l0wshared|
   // l1shared))` variable its concrete address and delete the global.  The
