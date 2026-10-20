@@ -413,14 +413,28 @@ static bool isLaneTrunc(const Instruction *I, Type *ElemTy,
 /// with one *scalar* operand: `v<op>.<lane>.<scalar>.i64(undef, %vec, %scalar,
 /// 128)`.  The corpus attests `and`/`mul`/`add` (the `control_*` family:
 /// `and i32 %tid, 1` -> `vand`, `mul i32 %v, 7` -> `vmul`, `add i32 %v, 3` ->
-/// `vadd`); every other opcode is left untransformed rather than guessed.
+/// `vadd`), plus `shl`/`xor` from `control_early_return` (`shl %tid, 1` ->
+/// `vsll`, `xor %v, 2` -> `vxor`); every other opcode is left untransformed
+/// rather than guessed.
 static const char *vectorBinOpName(unsigned Opcode) {
   switch (Opcode) {
   case Instruction::Add: return "vadd";
   case Instruction::Mul: return "vmul";
   case Instruction::And: return "vand";
+  case Instruction::Xor: return "vxor";
+  case Instruction::Shl: return "vsll";
   default:               return nullptr;
   }
+}
+
+/// `shl` is the one binary op whose *scalar operand is wider than the lane*:
+/// the vendor spells the shift amount as an `i64` regardless of the lane type,
+/// i.e. `.nxv2i32.i64.i64` rather than `.nxv2i32.i32.i64` -- verbatim from
+/// `recon/simt2simd/control_early_return.after.ir`:
+///   %17 = call <vscale x 2 x i32> @llvm.riscv.vsll.nxv2i32.i64.i64(
+///            <vscale x 2 x i32> undef, <vscale x 2 x i32> %10, i64 1, i64 128)
+static bool isShiftScalarOp(const Instruction *I) {
+  return I->getOpcode() == Instruction::Shl;
 }
 
 /// The vector counterpart of the `icmp` predicates the corpus uses.  Both take
@@ -576,6 +590,25 @@ static bool isVectorScalarAdd(const Instruction *I, Type *ElemTy,
     return false;
   return Vectorised.count(const_cast<Value *>(I->getOperand(0))) &&
          Uniform.count(const_cast<Value *>(I->getOperand(1)));
+}
+
+/// The vendor's `vv` shape: a plain integer `add` whose **both** operands are
+/// already vectorised lane values, which becomes a vector+vector RVV intrinsic
+/// (as opposed to the `vx` shape above, where the second operand stays scalar):
+///   `alloc_l1shared_base`:  %add = add i32 %b_load, %a_load
+///        -> llvm.riscv.vadd.nxv2i32.nxv2i32.i64(undef, %a, %b, i64 128)
+///   `control_early_return`: %add = add i32 %in_lane, %xor_lane
+///        -> llvm.riscv.vadd.nxv2i32.nxv2i32.i64(undef, %16, %19, i64 128)
+/// Only `add` is attested in this shape (both archived `after.ir` modules use
+/// exactly it), so any other opcode with two vectorised operands is still left
+/// untransformed rather than guessed.
+static bool isVectorVectorAdd(const Instruction *I, Type *ElemTy,
+                              const SmallPtrSetImpl<Value *> &Vectorised) {
+  if (I->getOpcode() != Instruction::Add || I->getType() != ElemTy ||
+      !ElemTy->isIntegerTy())
+    return false;
+  return Vectorised.count(const_cast<Value *>(I->getOperand(0))) &&
+         Vectorised.count(const_cast<Value *>(I->getOperand(1)));
 }
 
 /// LLVM's printed name for an integer scalar type, for the `vx` overload suffix.
@@ -891,6 +924,14 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
       Vectorised.insert(&I);
       continue;
     }
+    // ... and its `vv` counterpart, where both operands are already lane
+    // vectors (`alloc_*`: the sum of two tile-memory loads;
+    // `control_early_return`: the loaded lane plus the `shl/and/xor` addend).
+    if (isVectorVectorAdd(&I, ElemTy, Vectorised)) {
+      WillMap.insert(&I);
+      Vectorised.insert(&I);
+      continue;
+    }
     return false;
    }
   }
@@ -952,6 +993,8 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
     if (isUniformScalarInst(&I, Uniform))
       continue;
     if (isVectorScalarAdd(&I, ElemTy, Vectorised, Uniform))
+      continue;
+    if (isVectorVectorAdd(&I, ElemTy, Vectorised))
       continue;
     // Anything else (branches, phis, ...) is out of scope.
     return false;
@@ -1233,16 +1276,23 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
     if (isVectorConstOp(I, ElemTy, Vectorised)) {
       Value *Lane = I->getOperand(0);
       auto It = ToVec.find(Lane);
-      const char *ScalarName = intTypeName(ElemTy);
       auto *C = cast<ConstantInt>(I->getOperand(1));
+      // `shl` carries its shift amount as an `i64` even when the lanes are
+      // narrower (`.nxv2i32.i64.i64`), every other op uses the lane width
+      // (`.nxv2i32.i32.i64`).
+      const bool Shift = isShiftScalarOp(I);
+      Type *ScalarTy = Shift ? Int64Ty : ElemTy;
+      const char *ScalarName = Shift ? "i64" : intTypeName(ElemTy);
       if (It == ToVec.end() || !ScalarName)
         return false;
+      Value *Scalar = Shift ? ConstantInt::get(Int64Ty, C->getZExtValue())
+                            : cast<Value>(C);
       IRBuilder<> IB(I);
       FunctionCallee VOp = declareRVV(
           M, ("llvm.riscv." + std::string(vectorBinOpName(I->getOpcode())) +
               "." + VT + "." + ScalarName + ".i64").c_str(),
-          FunctionType::get(VecTy, {VecTy, VecTy, ElemTy, Int64Ty}, false));
-      ToVec[I] = IB.CreateCall(VOp, {UndefValue::get(VecTy), It->second, C,
+          FunctionType::get(VecTy, {VecTy, VecTy, ScalarTy, Int64Ty}, false));
+      ToVec[I] = IB.CreateCall(VOp, {UndefValue::get(VecTy), It->second, Scalar,
                                      IB.getInt64(SIMT_LANES)});
       ToErase.push_back(I);
       continue;
@@ -1280,6 +1330,26 @@ bool TX8TransformSIMTToSIMD::transform(Function &F) {
       ToVec[I] = IB.CreateCall(VMerge, {UndefValue::get(VecTy), ItF->second,
                                         ItT->second, ItC->second,
                                         IB.getInt64(SIMT_LANES)});
+      ToErase.push_back(I);
+      continue;
+    }
+    // The vector+vector `vv` shape (`alloc_*`, `control_early_return`): both
+    // operands come from the map and the call is spelled exactly like the
+    // vendor's --
+    //   %20 = call <vscale x 2 x i32> @llvm.riscv.vadd.nxv2i32.nxv2i32.i64(
+    //            <vscale x 2 x i32> undef, <vscale x 2 x i32> %16,
+    //            <vscale x 2 x i32> %19, i64 128)
+    if (isVectorVectorAdd(I, ElemTy, Vectorised)) {
+      auto ItA = ToVec.find(I->getOperand(0));
+      auto ItB = ToVec.find(I->getOperand(1));
+      if (ItA == ToVec.end() || ItB == ToVec.end())
+        return false;
+      IRBuilder<> IB(I);
+      FunctionCallee VV = declareRVV(
+          M, ("llvm.riscv.vadd." + VT + "." + VT + ".i64").c_str(),
+          FunctionType::get(VecTy, {VecTy, VecTy, VecTy, Int64Ty}, false));
+      ToVec[I] = IB.CreateCall(VV, {UndefValue::get(VecTy), ItA->second,
+                                    ItB->second, IB.getInt64(SIMT_LANES)});
       ToErase.push_back(I);
       continue;
     }

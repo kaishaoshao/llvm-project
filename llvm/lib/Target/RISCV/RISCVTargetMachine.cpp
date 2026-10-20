@@ -587,9 +587,21 @@ bool RISCVPassConfig::addPreISel() {
     addPass(createBarrierNoopPass());
   }
 
-  if ((TM->getOptLevel() != CodeGenOptLevel::None &&
-       EnableGlobalMerge == cl::BOU_UNSET) ||
-      EnableGlobalMerge == cl::BOU_TRUE) {
+  // RAISA device kernels must keep their tile-memory (`l0ashared`/
+  // `l0wshared`/`l1shared`) variables distinct.  The vendor runs the global
+  // merge late enough that its `simt2simd` still sees one global per variable
+  // and can recognise `addrspacecast (ptr addrspace(2|3|4) @g to ptr)` as an
+  // offset-0 tile-memory access; with the merge in place every access is
+  // rewritten to `getelementptr @_MergedGlobals, 0, <field>`, which is
+  // indistinguishable from a shared global accessed at a non-zero constant
+  // offset, so the pass has to bail and ISel then dies on the surviving
+  // AS2/AS3/AS4 access (`alloc_*`: `Don't know how to custom type legalize
+  // this intrinsic!`).  Verified: `-mllvm -riscv-enable-global-merge=false`
+  // restores the vendor's per-variable globals verbatim.
+  if (!TM->getTargetTriple().isRaisa() &&
+      ((TM->getOptLevel() != CodeGenOptLevel::None &&
+        EnableGlobalMerge == cl::BOU_UNSET) ||
+       EnableGlobalMerge == cl::BOU_TRUE)) {
     // FIXME: Like AArch64, we disable extern global merging by default due to
     // concerns it might regress some workloads. Unlike AArch64, we don't
     // currently support enabling the pass in an "OnlyOptimizeForSize" mode.
