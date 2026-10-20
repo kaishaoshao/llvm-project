@@ -444,6 +444,9 @@ def HLSL : LangOpt<"HLSL">;
 // Language option for CMSE extensions
 def Cmse : LangOpt<"Cmse">;
 
+// Language option for RAISA extensions.
+def RAISA : LangOpt<"RAISA">;
+
 // Defines targets for target-specific attributes. Empty lists are unchecked.
 class TargetSpec {
   // Specifies Architectures for which the target applies, based off the
@@ -1492,7 +1495,7 @@ def CPUDispatch : InheritableAttr {
 def CUDAConstant : InheritableAttr {
   let Spellings = [GNU<"constant">, Declspec<"__constant__">];
   let Subjects = SubjectList<[Var]>;
-  let LangOpts = [CUDA];
+  let LangOpts = [CUDA, RAISA];
   let Documentation = [Undocumented];
 }
 
@@ -1504,7 +1507,7 @@ def CUDACudartBuiltin : IgnoredAttr {
 def CUDADevice : InheritableAttr {
   let Spellings = [GNU<"device">, Declspec<"__device__">];
   let Subjects = SubjectList<[Function, Var]>;
-  let LangOpts = [CUDA];
+  let LangOpts = [CUDA, RAISA];
   let Documentation = [Undocumented];
 }
 
@@ -1538,7 +1541,7 @@ def : MutualExclusions<[CUDADeviceBuiltinSurfaceType,
 def CUDAGlobal : InheritableAttr {
   let Spellings = [GNU<"global">, Declspec<"__global__">];
   let Subjects = SubjectList<[Function]>;
-  let LangOpts = [CUDA];
+  let LangOpts = [CUDA, RAISA];
   let Documentation = [Undocumented];
 }
 def : MutualExclusions<[CUDADevice, CUDAGlobal]>;
@@ -1546,7 +1549,7 @@ def : MutualExclusions<[CUDADevice, CUDAGlobal]>;
 def CUDAHost : InheritableAttr {
   let Spellings = [GNU<"host">, Declspec<"__host__">];
   let Subjects = SubjectList<[Function]>;
-  let LangOpts = [CUDA];
+  let LangOpts = [CUDA, RAISA];
   let Documentation = [Undocumented];
   let SimpleHandler = 1;
 }
@@ -1588,10 +1591,62 @@ def CUDALaunchBounds : InheritableAttr {
 def CUDAShared : InheritableAttr {
   let Spellings = [GNU<"shared">, Declspec<"__shared__">];
   let Subjects = SubjectList<[Var]>;
-  let LangOpts = [CUDA];
+  let LangOpts = [CUDA, RAISA];
   let Documentation = [Undocumented];
 }
 def : MutualExclusions<[CUDAConstant, CUDAShared, HIPManaged]>;
+
+// RAISA attributes are spelled __attribute__((attr)) or __declspec(__attr__).
+def RAISAClusterDims : InheritableAttr {
+  let Spellings = [GNU<"cluster_dims">, Declspec<"__cluster_dims__">];
+  let Args = [ExprArgument<"X">, ExprArgument<"Y">, ExprArgument<"Z">];
+  let Subjects = SubjectList<[Function]>;
+  let LangOpts = [RAISA];
+  let TemplateDependent = 1;
+  let Documentation = [Undocumented];
+}
+
+def RAISAGMem : InheritableAttr {
+  let Spellings = [GNU<"gmem">, Declspec<"__gmem__">];
+  let Subjects = SubjectList<[Var]>;
+  let LangOpts = [RAISA];
+  let Documentation = [Undocumented];
+}
+
+def RAISAGeneric : InheritableAttr {
+  let Spellings = [GNU<"generic">, Declspec<"__generic__">];
+  let Subjects = SubjectList<[Var]>;
+  let LangOpts = [RAISA];
+  let Documentation = [Undocumented];
+}
+
+def RAISAInvalidTarget : InheritableAttr {
+  let Spellings = [];
+  let Subjects = SubjectList<[Function]>;
+  let LangOpts = [RAISA];
+  let Documentation = [InternalOnly];
+}
+
+def RAISAL0AShared : InheritableAttr {
+  let Spellings = [GNU<"l0ashared">, Declspec<"__L0Ashared__">];
+  let Subjects = SubjectList<[Var]>;
+  let LangOpts = [RAISA];
+  let Documentation = [Undocumented];
+}
+
+def RAISAL0WShared : InheritableAttr {
+  let Spellings = [GNU<"l0wshared">, Declspec<"__L0Wshared__">];
+  let Subjects = SubjectList<[Var]>;
+  let LangOpts = [RAISA];
+  let Documentation = [Undocumented];
+}
+
+def RAISAL1Shared : InheritableAttr {
+  let Spellings = [GNU<"l1shared">, Declspec<"__L1shared__">];
+  let Subjects = SubjectList<[Var]>;
+  let LangOpts = [RAISA];
+  let Documentation = [Undocumented];
+}
 
 def DeviceKernel : DeclOrTypeAttr {
   let Spellings = [Clang<"device_kernel">, Clang<"sycl_kernel">,
@@ -4470,7 +4525,7 @@ def LoopHint : Attr {
 
   let Spellings = [Pragma<"clang", "loop">, Pragma<"", "unroll">,
                    Pragma<"", "nounroll">, Pragma<"", "unroll_and_jam">,
-                   Pragma<"", "nounroll_and_jam">];
+                   Pragma<"", "nounroll_and_jam">, Pragma<"", "raisa_loop_hint">];
 
   /// State of the loop optimization specified by the spelling.
   let Args = [EnumArgument<"Option", "OptionType", /*is_string=*/false,
@@ -5077,6 +5132,13 @@ def RandomizeLayout : InheritableAttr {
   let Subjects = SubjectList<[Record]>;
   let Documentation = [ClangRandomizeLayoutDocs];
   let LangOpts = [COnly];
+}
+
+def NoRVV : InheritableAttr, TargetSpecificAttr<TargetRISCV> {
+  let Spellings = [GCC<"no_vector">, GCC<"no_rvv">];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+  let Documentation = [Undocumented];
+  let SimpleHandler = 1;
 }
 
 def NoRandomizeLayout : InheritableAttr {
