@@ -263,6 +263,10 @@ struct DemandedFields {
   // lines 350-356).  Only demanded for e16 instructions of a function that the
   // SIMT->SIMD rewrite turned into bf16 arithmetic -- see hasBF16Fmt().
   bool BF16Fmt = false;
+  // TSM fork: this instruction demands a particular value of bit 8 of VTYPE
+  // (the bf16 format bit).  Declared per pseudo via the `AltFmtType` TSFlags
+  // property (RISCVII::hasAltFmtType).
+  bool AltFmt = false;
   // If this is true, we demand that VTYPE is set to some legal state, i.e. that
   // vill is unset.
   bool VILL = false;
@@ -270,7 +274,7 @@ struct DemandedFields {
   // Return true if any part of VTYPE was used
   bool usedVTYPE() const {
     return SEW || LMUL || SEWLMULRatio || TailPolicy || MaskPolicy || BF16Fmt ||
-           VILL;
+           AltFmt || VILL;
   }
 
   // Return true if any property of VL was used
@@ -286,6 +290,7 @@ struct DemandedFields {
     TailPolicy = true;
     MaskPolicy = true;
     BF16Fmt = true;
+    AltFmt = true;
     VILL = true;
   }
 
@@ -312,6 +317,7 @@ struct DemandedFields {
     TailPolicy |= B.TailPolicy;
     MaskPolicy |= B.MaskPolicy;
     BF16Fmt |= B.BF16Fmt;
+    AltFmt |= B.AltFmt;
     VILL |= B.VILL;
   }
 
@@ -360,6 +366,7 @@ struct DemandedFields {
     OS << "TailPolicy=" << TailPolicy << ", ";
     OS << "MaskPolicy=" << MaskPolicy << ", ";
     OS << "BF16Fmt=" << BF16Fmt << ", ";
+    OS << "AltFmt=" << AltFmt << ", ";
     OS << "VILL=" << VILL;
     OS << "}";
   }
@@ -435,6 +442,10 @@ static bool areCompatibleVTYPEs(uint64_t CurVType, uint64_t NewVType,
   if (Used.BF16Fmt && RISCVVType::isBF16Fmt(CurVType) !=
                           RISCVVType::isBF16Fmt(NewVType))
     return false;
+  // TSM fork: bit 8 (bf16 format) is demanded by some XTsm82s vector pseudos.
+  if (Used.AltFmt &&
+      RISCVVType::isAltFmt(CurVType) != RISCVVType::isAltFmt(NewVType))
+    return false;
   return true;
 }
 
@@ -471,6 +482,7 @@ static bool hasBF16Fmt(const MachineInstr &MI) {
   const MachineFunction *MF = MI.getMF();
   return MF && MF->getFunction().hasFnAttribute("tx8-simt-bf16-fmt");
 }
+
 /// Return the fields and properties demanded by the provided instruction.
 DemandedFields getDemanded(const MachineInstr &MI, const RISCVSubtarget *ST) {
   // This function works in coalesceVSETVLI too. We can still use the value of a
@@ -633,6 +645,10 @@ DemandedFields getDemanded(const MachineInstr &MI, const RISCVSubtarget *ST) {
     Res.TailPolicy = false;
   }
 
+  // TSM fork: pseudos marked `AltFmtType` demand bit 8 of VTYPE.  Set last so
+  // the SEW/LMUL-relaxing special cases above cannot drop it.
+  Res.AltFmt = RISCVII::hasAltFmtType(TSFlags);
+
   return Res;
 }
 
@@ -663,6 +679,8 @@ class VSETVLIInfo {
   uint8_t SEW = 0;
   uint8_t TailAgnostic : 1;
   uint8_t MaskAgnostic : 1;
+  // TSM fork: bit 8 of VTYPE (bf16 format).
+  uint8_t AltFmt : 1;
   uint8_t SEWLMULRatioOnly : 1;
   // Vendor fork: vtype bit 8, the BF16 element-format flag (see hasBF16Fmt()).
   uint8_t BF16Fmt : 1;
@@ -670,7 +688,7 @@ class VSETVLIInfo {
 public:
   VSETVLIInfo()
       : AVLImm(0), TailAgnostic(false), MaskAgnostic(false),
-        SEWLMULRatioOnly(false), BF16Fmt(false) {}
+        SEWLMULRatioOnly(false), BF16Fmt(false), AltFmt(false) {}
 
   static VSETVLIInfo getUnknown() {
     VSETVLIInfo Info;
@@ -743,6 +761,7 @@ public:
   bool getTailAgnostic() const { return TailAgnostic; }
   bool getMaskAgnostic() const { return MaskAgnostic; }
   bool getBF16Fmt() const { return BF16Fmt; }
+  bool getAltFmt() const { return AltFmt; }
 
   bool hasNonZeroAVL(const LiveIntervals *LIS) const {
     if (hasAVLImm())
@@ -805,6 +824,7 @@ public:
     TailAgnostic = RISCVVType::isTailAgnostic(VType);
     MaskAgnostic = RISCVVType::isMaskAgnostic(VType);
     BF16Fmt = RISCVVType::isBF16Fmt(VType);
+    AltFmt = RISCVVType::isAltFmt(VType);
   }
   void setVTYPE(RISCVVType::VLMUL L, unsigned S, bool TA, bool MA,
                 bool BF16 = false) {
@@ -815,7 +835,10 @@ public:
     TailAgnostic = TA;
     MaskAgnostic = MA;
     BF16Fmt = BF16;
+    AltFmt = false;
   }
+
+  void setAltFmt(bool BF16Fmt) { AltFmt = BF16Fmt; }
 
   void setVLMul(RISCVVType::VLMUL VLMul) { this->VLMul = VLMul; }
 
@@ -823,7 +846,7 @@ public:
     assert(isValid() && !isUnknown() && !SEWLMULRatioOnly &&
            "Can't encode VTYPE for uninitialized or unknown");
     return RISCVVType::encodeVTYPE(VLMul, SEW, TailAgnostic, MaskAgnostic,
-                                   BF16Fmt);
+                                   BF16Fmt || AltFmt);
   }
 
   bool hasSEWLMULRatioOnly() const { return SEWLMULRatioOnly; }
@@ -835,9 +858,9 @@ public:
            "Can't compare VTYPE in unknown state");
     assert(!SEWLMULRatioOnly && !Other.SEWLMULRatioOnly &&
            "Can't compare when only LMUL/SEW ratio is valid.");
-    return std::tie(VLMul, SEW, TailAgnostic, MaskAgnostic, BF16Fmt) ==
+    return std::tie(VLMul, SEW, TailAgnostic, MaskAgnostic, BF16Fmt, AltFmt) ==
            std::tie(Other.VLMul, Other.SEW, Other.TailAgnostic,
-                    Other.MaskAgnostic, Other.BF16Fmt);
+                    Other.MaskAgnostic, Other.BF16Fmt, Other.AltFmt);
   }
 
   unsigned getSEWLMULRatio() const {
@@ -1219,6 +1242,8 @@ RISCVInsertVSETVLI::computeInfoForInstr(const MachineInstr &MI) const {
   }
 #endif
   InstrInfo.setVTYPE(VLMul, SEW, TailAgnostic, MaskAgnostic, hasBF16Fmt(MI));
+  // TSM fork: pseudos marked `AltFmtType` require bit 8 of VTYPE to be set.
+  InstrInfo.setAltFmt(RISCVII::hasAltFmtType(TSFlags));
 
   forwardVSETVLIAVL(InstrInfo);
 
@@ -1431,6 +1456,9 @@ void RISCVInsertVSETVLI::transferBefore(VSETVLIInfo &Info,
 
   unsigned SEW =
       ((Demanded.SEW || Demanded.SEWLMULRatio) ? IncomingInfo : Info).getSEW();
+  // TSM fork: `setVTYPE` below resets the altfmt bit, so remember the previous
+  // configuration's value first -- the bit is an equality demand like SEW/LMUL.
+  const bool PrevAltFmt = Info.getAltFmt();
   Info.setVTYPE(
       ((Demanded.LMUL || Demanded.SEWLMULRatio) ? IncomingInfo : Info)
           .getVLMUL(),
@@ -1444,6 +1472,7 @@ void RISCVInsertVSETVLI::transferBefore(VSETVLIInfo &Info,
       // Vendor fork: same shape as the policy fields above; the format bit is
       // only meaningful for SEW < 32.
       (Demanded.BF16Fmt ? IncomingInfo : Info).getBF16Fmt() && SEW < 32);
+  Info.setAltFmt(Demanded.AltFmt ? IncomingInfo.getAltFmt() : PrevAltFmt);
 
   // If we only knew the sew/lmul ratio previously, replace the VTYPE but keep
   // the AVL.
