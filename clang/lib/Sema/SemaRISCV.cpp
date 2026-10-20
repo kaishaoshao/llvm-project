@@ -140,6 +140,14 @@ static QualType RVVType2Qual(ASTContext &Context, const RVVType *Type) {
   case ScalarTypeKind::BFloat:
     QT = Context.BFloat16Ty;
     break;
+  case ScalarTypeKind::S128:
+    // RAISA: 128-bit integer element type.
+    // INFERRED: only the scalar element type is reproduced.  The vendor
+    // object additionally calls ASTContext::getVectorType(...) from this
+    // function (+48 B) i.e. it has a fixed-length vector path that our
+    // reconstruction does not implement -- see 0019's report.
+    QT = Context.Int128Ty;
+    break;
   case ScalarTypeKind::Float:
     switch (Type->getElementBitwidth()) {
     case 64:
@@ -569,6 +577,17 @@ bool SemaRISCV::CheckBuiltinFunctionCall(const TargetInfo &TI,
                     diag::err_riscv_builtin_requires_extension)
                << /* IsExtension */ true << TheCall->getSourceRange() << RF;
   }
+
+#ifdef __TSM_RISCV__
+  // RAISA / TX8 CT (compute-tile) targets accept only the CT intrinsic set.
+  // PROVEN: the vendor's CheckBuiltinFunctionCall (SemaRISCV.cpp.o, size
+  // 0x30d5 vs our 0x2eed, +488 B) has a relocation at offset 0xd89 to
+  // SemaRISCV::CheckCTBuiltinFunctionCall, immediately after a 7-character
+  // feature-name lookup ("xtsm82s").  INFERRED: the exact predicate and the
+  // placement of the arm within the function.
+  if (getLangOpts().RAISA)
+    return CheckCTBuiltinFunctionCall(TI, BuiltinID, TheCall);
+#endif
 
   // vmulh.vv, vmulh.vx, vmulhu.vv, vmulhu.vx, vmulhsu.vv, vmulhsu.vx,
   // vsmul.vv, vsmul.vx are not included for EEW=64 in Zve64*.
