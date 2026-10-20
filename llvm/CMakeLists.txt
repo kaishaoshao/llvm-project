@@ -1319,6 +1319,25 @@ if(LLVM_INCLUDE_TESTS)
   umbrella_lit_testsuite_begin(check-all)
 endif()
 
+# RAISA/TSM fork build glue.
+#
+# The vendor fork guards a significant amount of LLVM and Clang code behind
+# __TSM_RISCV__ (for example llvm/TargetParser/Triple.h,
+# llvm/IR/CallingConv.h, llvm/CodeGen/*, clang/Basic/OffloadArch.h and
+# clang/AST/ASTContext.h).  The vendor shipped the switch ENABLED for the whole
+# tree, so reproduce that definition here instead of relying on an ad-hoc
+# -D__TSM_RISCV__ on the configure command line.
+#
+# This is intentionally placed after include(HandleLLVMOptions) (which captured
+# LLVM_DEFINITIONS from the directory COMPILE_DEFINITIONS property a few lines
+# above) and before the first add_subdirectory, so that:
+#   * every LLVM target below inherits the definition, and
+#   * the clang subproject, which is added later through projects/ ->
+#     add_llvm_external_project(clang) -> add_subdirectory(), inherits it too,
+#   * it does not leak into LLVM_DEFINITIONS / the installed LLVMConfig.cmake
+#     (the vendor's installed LLVMConfig.cmake does not contain it).
+add_compile_definitions(__TSM_RISCV__)
+
 # Put this before tblgen. Else we have a circular dependence.
 add_subdirectory(lib/Demangle)
 add_subdirectory(lib/Support)
