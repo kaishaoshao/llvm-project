@@ -4424,3 +4424,363 @@ let Predicates = [HasVendorXTsm82s, HasVInstructions] in
 def : InstAlias<"vneg.v $vd, $vs",
                 (XTsm_VRSUB_VX VR:$vd, VR:$vs, X0, zero_reg)>;
 
+//===----------------------------------------------------------------------===//
+// XTsm82s (RAISA) : fork RVV pseudos + ISel patterns  (R2 line, patch 1010)
+//
+// The fork's vector intrinsics (`llvm.riscv.vslh`, `vluxei.sync`, ...) had no
+// ISel connection at all: the real instructions above are modeled straight from
+// the vendor's *encodings* and therefore carry no VL/VTYPE operands, while the
+// vendor's pipeline uses pseudos that do:
+//
+//   early-clobber %6:vrm2 = PseudoVSLH_VX_M2 $noreg(tied-def 0), killed %4:vr,
+//                           killed %5:gpr, 128, 5, 0
+//
+// (128 = AVL, 5 = Log2SEW for e32, 0 = policy.)  Only with VL/VTYPE present can
+// RISCVInsertVSETVLI compute the surrounding `vsetvli` sequence and rewrite the
+// pseudo into the real opcode through RISCV::getRVVMCOpcode.
+//
+// These definitions must live in this file and not in
+// RISCVInstrInfoVPseudos.td: RISCVInstrInfo.td includes the upstream pseudo file
+// at line 2280 but this file at line 2311, and `PseudoToVInst` resolves a pseudo
+// name to a real instruction record, so the `XTsm_*` records must already be
+// visible at that point.
+//
+// Naming: `PseudoXTsm_VSLH_*` resolves through PseudoToVInst ("Pseudo" and the
+// LMUL affix stripped) to `XTsm_VSLH_*`, so the shared substitution list in
+// RISCVInstrInfoVPseudos.td needs no change.
+//===----------------------------------------------------------------------===//
+
+// `vslh`: source is the narrow type, destination the wide one (nxv2i32 = M1 ->
+// nxv2i64 = M2 at the RAISA VLEN=4096), so the upstream widening classes apply
+// and `VPseudoBinaryW_VX<V_M1>` yields exactly the vendor's classes (def VRM2,
+// source VR) and the `@earlyclobber` the vendor's MIR shows.
+// The fork names a widening pseudo after its *destination* LMUL and stores that
+// LMUL in `VLMul`.  Vendor evidence: `PseudoVSLH_VX_M2` has a VR (M1) source and
+// a VRM2 destination and the vsetvli it produces is `e32, m2` -- whereas
+// upstream's `VPseudoBinaryW_VX<V_M1>` names itself `_M1` and sets VLMul = M1.
+// Our first version therefore generated a name set shifted one LMUL below the
+// vendor's (ours {MF8..M4}, vendor {MF4..M8}); fixed here by iterating over the
+// source LMUL while taking the name, `VLMul` and the destination register class
+// from the wider one.  The source class stays m.vrclass.
+class XTsmWiderLMUL<LMULInfo m> {
+  LMULInfo W = !cond(!eq(m.MX, "MF8"): V_MF4,
+                     !eq(m.MX, "MF4"): V_MF2,
+                     !eq(m.MX, "MF2"): V_M1,
+                     !eq(m.MX, "M1"):  V_M2,
+                     !eq(m.MX, "M2"):  V_M4,
+                     !eq(m.MX, "M4"):  V_M8);
+}
+
+multiclass VPseudoXTsmVSLH_VV_VX {
+  foreach m = MxListW in {
+    defvar w = XTsmWiderLMUL<m>.W;
+    // The scheduler writes only exist up to the widest *source* LMUL
+    // (MxListW excludes M8), so key the sched class on the source LMUL exactly
+    // as upstream's VPseudoVWALU_VV_VX does.
+    defvar mx = m.MX;
+    // The vendor's vsetvli for `vslh` carries the bf16 format bit
+    // (observed in all 34 `vslh.v*` occurrences of the round-2 corpus).
+    let AltFmtType = 1 in {
+      defm "_VV" : VPseudoBinary<m.wvrclass, m.vrclass, m.vrclass, w,
+                                 "@earlyclobber $rd", 0, 3>,
+                   SchedBinary<"WriteVIWALUV", "ReadVIWALUV", "ReadVIWALUV",
+                               mx, forcePassthruRead=true>;
+      defm "_VX" : VPseudoBinary<m.wvrclass, m.vrclass, GPR, w,
+                                 "@earlyclobber $rd", 0, 3>,
+                   SchedBinary<"WriteVIWALUX", "ReadVIWALUV", "ReadVIWALUX",
+                               mx, forcePassthruRead=true>;
+    }
+  }
+}
+defm PseudoXTsm_VSLH : VPseudoXTsmVSLH_VV_VX;
+
+// Patterns must use the destination LMUL as well (upstream's VPatBinaryW_* uses
+// the source LMUL), so this is VPatBinaryW_VV/VX with `Wti.LMul.MX`.
+multiclass VPatXTsmBinaryW_VV_VX<string intrinsic, string instruction,
+                                 list<VTypeInfoToWide> vtilist> {
+  foreach VtiToWti = vtilist in {
+    defvar Vti = VtiToWti.Vti;
+    defvar Wti = VtiToWti.Wti;
+    let Predicates = !listconcat(GetVTypePredicates<Vti>.Predicates,
+                                 GetVTypePredicates<Wti>.Predicates) in {
+      defm : VPatBinary<intrinsic, instruction # "_VV_" # Wti.LMul.MX,
+                        Wti.Vector, Vti.Vector, Vti.Vector, Vti.Mask,
+                        Vti.Log2SEW, Wti.RegClass, Vti.RegClass, Vti.RegClass>;
+      defm : VPatBinary<intrinsic, instruction # "_VX_" # Wti.LMul.MX,
+                        Wti.Vector, Vti.Vector, Vti.Scalar, Vti.Mask,
+                        Vti.Log2SEW, Wti.RegClass, Vti.RegClass,
+                        Vti.ScalarRegClass>;
+    }
+  }
+}
+defm : VPatXTsmBinaryW_VV_VX<"int_riscv_vslh", "PseudoXTsm_VSLH",
+                              AllWidenableIntVectors>;
+
+
+//===----------------------------------------------------------------------===//
+// XTsm82s (RAISA) : `vluxei.sync` / `vsuxei.sync` pseudos
+//
+// The fork adds explicit `ptr`-taking indexed load/store intrinsics
+// (`llvm.riscv.{vluxei,vsuxei}.sync.*.p0.*.i64`) whose instruction selection
+// lives in RISCVISelDAGToDAG.cpp.  The vendor's own pseudo family was recovered
+// from its `libLLVMRISCVDesc.a` (`strings -a | grep '^PseudoV[LS]UXEI'`) and
+// contains exactly two `_SYNC_` groups:
+//
+//   idx EEW 64, data EEW 16/32:  VLUXEI64_SYNC_V_{M1_MF2, M1_MF4, M2_M1,
+//                               M2_MF2, M4_M1, M4_M2, M8_M2, M8_M4}
+//   idx EEW 32, data EEW 16/32:  VLUXEI32_SYNC_V_{MF2_MF4, MF2_MF2, M1_MF2,
+//                               M1_M1, M2_M1, M2_M2, M4_M2, M4_M4, M8_M4, M8_M8}
+//
+// (name = <IndexLMUL>_<DataLMUL>).  That is precisely the upstream
+// `VPseudoILoad`/`VPseudoIStore` EMUL rule
+// `idxEMUL = idxEEW * dataEMUL / dataEEW` restricted to those two index EEWs,
+// so the multiclasses below are a direct copy of `VPseudoILoad`/`VPseudoIStore`
+// with the loop nests narrowed -- the generated name set was verified to be
+// exactly the 8 + 10 names above, per direction.
+//
+// Operand order: `RISCVAsmPrinter::lowerRISCVVMachineInstrToMCInst` copies the
+// leading explicit operands *positionally* onto the base instruction (skipping
+// only the tied passthru), so the pseudo must list them in the order our
+// `XTsm_*_SYNC_V` records declare them:
+//     (outs VR:$vd), (ins VR:$vs2, GPRMemZeroOffset:$rs1, VMaskOp:$vm)
+// i.e. index before base.  Upstream's `VPseudoILoadNoMask` lists the base
+// first, which is why these are separate classes rather than reused ones:
+// with the upstream order the index and the base pointer would be swapped in
+// the emitted MCInst.
+//===----------------------------------------------------------------------===//
+
+class VPseudoXTsmILoadNoMask<VReg RetClass, VReg IdxClass, bit EarlyClobber,
+                              bits<2> TargetConstraintType = 1> :
+      Pseudo<(outs RetClass:$rd),
+             (ins RetClass:$dest, IdxClass:$rs2, GPRMemZeroOffset:$rs1,
+                  AVL:$vl, sew:$sew, vec_policy:$policy), []>,
+      RISCVVPseudo {
+  let mayLoad = 1;
+  let mayStore = 0;
+  let hasSideEffects = 0;
+  let HasVLOp = 1;
+  let HasSEWOp = 1;
+  let HasVecPolicyOp = 1;
+  let Constraints = !if(!eq(EarlyClobber, 1),
+                        "@earlyclobber $rd, $rd = $dest", "$rd = $dest");
+  let TargetOverlapConstraintType = TargetConstraintType;
+}
+
+class VPseudoXTsmILoadMask<VReg RetClass, VReg IdxClass, bit EarlyClobber,
+                           bits<2> TargetConstraintType = 1> :
+      Pseudo<(outs GetVRegNoV0<RetClass>.R:$rd),
+             (ins GetVRegNoV0<RetClass>.R:$passthru, IdxClass:$rs2,
+                  GPRMemZeroOffset:$rs1, VMaskOp:$vm, AVL:$vl, sew:$sew,
+                  vec_policy:$policy), []>,
+      RISCVVPseudo {
+  let mayLoad = 1;
+  let mayStore = 0;
+  let hasSideEffects = 0;
+  let HasVLOp = 1;
+  let HasSEWOp = 1;
+  let HasVecPolicyOp = 1;
+  let UsesMaskPolicy = 1;
+  let Constraints = !if(!eq(EarlyClobber, 1),
+                        "@earlyclobber $rd, $rd = $passthru", "$rd = $passthru");
+  let TargetOverlapConstraintType = TargetConstraintType;
+  let IncludeInInversePseudoTable = 0;
+}
+
+class VPseudoXTsmIStoreNoMask<VReg StClass, VReg IdxClass> :
+      Pseudo<(outs),
+             (ins StClass:$rd, IdxClass:$rs2, GPRMemZeroOffset:$rs1, AVL:$vl,
+                  sew:$sew), []>,
+      RISCVVPseudo {
+  let mayLoad = 0;
+  let mayStore = 1;
+  let hasSideEffects = 0;
+  let HasVLOp = 1;
+  let HasSEWOp = 1;
+}
+
+class VPseudoXTsmIStoreMask<VReg StClass, VReg IdxClass> :
+      Pseudo<(outs),
+             (ins StClass:$rd, IdxClass:$rs2, GPRMemZeroOffset:$rs1,
+                  VMaskOp:$vm, AVL:$vl, sew:$sew), []>,
+      RISCVVPseudo {
+  let mayLoad = 0;
+  let mayStore = 1;
+  let hasSideEffects = 0;
+  let HasVLOp = 1;
+  let HasSEWOp = 1;
+  let IncludeInInversePseudoTable = 0;
+}
+
+multiclass VPseudoXTsmSyncI {
+  foreach idxEEW = [32, 64] in {
+    foreach dataEEW = [16, 32] in {
+      foreach dataEMUL = MxSet<dataEEW>.m in {
+        defvar dataEMULOctuple = dataEMUL.octuple;
+        defvar idxEMULOctuple =
+          !srl(!mul(idxEEW, dataEMULOctuple), !logtwo(dataEEW));
+        if !and(!ge(idxEMULOctuple, 1), !le(idxEMULOctuple, 64)) then {
+          defvar DataLInfo = dataEMUL.MX;
+          defvar IdxLInfo = octuple_to_str<idxEMULOctuple>.ret;
+          defvar idxEMUL = !cast<LMULInfo>("V_" # IdxLInfo);
+          defvar Vreg = dataEMUL.vrclass;
+          defvar IdxVreg = idxEMUL.vrclass;
+          defvar HasConstraint = !ne(dataEEW, idxEEW);
+          defvar TypeConstraints =
+            !if(!eq(dataEEW, idxEEW), 1,
+                !if(!gt(dataEEW, idxEEW),
+                    !if(!ge(idxEMULOctuple, 8), 3, 1), 2));
+          // The vendor's vsetvli for the EEW=64 `.sync` gather/scatter carries
+          // the bf16 format bit even for i32 data (all 25 `v{l,s}uxei64.sync.v`
+          // occurrences of the round-2 corpus); no such evidence exists for the
+          // EEW=32 forms, so those stay unmarked.
+          let AltFmtType = !if(!eq(idxEEW, 64), 1, 0) in
+          let VLMul = dataEMUL.value in {
+            def "XTsm_VLUXEI" # idxEEW # "_SYNC_V_" # IdxLInfo # "_" # DataLInfo :
+              VPseudoXTsmILoadNoMask<Vreg, IdxVreg, HasConstraint,
+                                     TypeConstraints>;
+            def "XTsm_VLUXEI" # idxEEW # "_SYNC_V_" # IdxLInfo # "_" # DataLInfo # "_MASK" :
+              VPseudoXTsmILoadMask<Vreg, IdxVreg, HasConstraint,
+                                   TypeConstraints>,
+              RISCVMaskedPseudo<MaskIdx = 3>;
+            def "XTsm_VSUXEI" # idxEEW # "_SYNC_V_" # IdxLInfo # "_" # DataLInfo :
+              VPseudoXTsmIStoreNoMask<Vreg, IdxVreg>;
+            def "XTsm_VSUXEI" # idxEEW # "_SYNC_V_" # IdxLInfo # "_" # DataLInfo # "_MASK" :
+              VPseudoXTsmIStoreMask<Vreg, IdxVreg>,
+              RISCVMaskedPseudo<MaskIdx = 3>;
+          }
+        }
+      }
+    }
+  }
+}
+defm Pseudo : VPseudoXTsmSyncI;
+
+
+//===----------------------------------------------------------------------===//
+// XTsm82s (RAISA) : `vcos` / `vsin` / `vlog2` / `vpow2` pseudos
+//
+// Vendor name sets (recovered with
+// `strings -a libLLVMRISCVDesc.a | grep -E '^PseudoV(COS|SIN|LOG2|POW2)_'`,
+// 42 names per op):
+//   PseudoV<OP>_V_<LMUL>_E<SEW>          M1/M2/M4/M8 x {16,32,64},
+//                                        MF2 x {16,32}, MF4 x {16}
+//   PseudoV<OP>_BFloat16_V_<LMUL>_E16    all LMULs
+// which is exactly upstream's `MxListF` x `SchedSEWSet<MX, isF=1>` (that is the
+// shape `VPseudoVSQR_V_RM` generates) plus a bf16-only 16-bit twin named with
+// `BFloat16_` inserted after the opcode -- the same convention upstream uses for
+// its `_BFloat16_` family.  The operand shape matches the vendor MIR:
+//   %5:vr = nofpexcept PseudoVCOS_V_M1_E32 $noreg(tied-def 0), killed %4:vr,
+//           7, 128, 5, 0, implicit $frm
+// i.e. (passthru, src, frm, vl, sew, policy) -- `VPseudoUnaryNoMaskRoundingMode`.
+//===----------------------------------------------------------------------===//
+
+multiclass VPseudoXTsmVUnaryMath {
+  foreach m = MxListF in {
+    defvar mx = m.MX;
+    defvar sews = SchedSEWSet<m.MX, isF = 1>.val;
+    let VLMul = m.value in
+      foreach e = sews in {
+        defvar suffix = "_" # mx # "_E" # e;
+        let SEW = e in {
+          def "_V" # suffix
+              : VPseudoUnaryNoMaskRoundingMode<m.vrclass, m.vrclass>,
+                SchedUnary<"WriteVFSqrtV", "ReadVFSqrtV", mx, e,
+                           forcePassthruRead = true>;
+          def "_V" # suffix # "_MASK"
+              : VPseudoUnaryMaskRoundingMode<m.vrclass, m.vrclass>,
+                RISCVMaskedPseudo<MaskIdx = 2>,
+                SchedUnary<"WriteVFSqrtV", "ReadVFSqrtV", mx, e,
+                           forcePassthruRead = true>;
+        }
+      }
+  }
+  foreach m = MxListF in {
+    defvar mx = m.MX;
+    // The bf16 twin demands the bf16 format bit; its non-bf16 sibling does not.
+    let VLMul = m.value, SEW = 16, AltFmtType = 1 in {
+      def "_BFloat16_V_" # mx # "_E16"
+          : VPseudoUnaryNoMaskRoundingMode<m.vrclass, m.vrclass>,
+            SchedUnary<"WriteVFSqrtV", "ReadVFSqrtV", mx, 16,
+                       forcePassthruRead = true>;
+      def "_BFloat16_V_" # mx # "_E16_MASK"
+          : VPseudoUnaryMaskRoundingMode<m.vrclass, m.vrclass>,
+            RISCVMaskedPseudo<MaskIdx = 2>,
+            SchedUnary<"WriteVFSqrtV", "ReadVFSqrtV", mx, 16,
+                       forcePassthruRead = true>;
+    }
+  }
+}
+
+defm PseudoXTsm_VCOS : VPseudoXTsmVUnaryMath;
+defm PseudoXTsm_VSIN : VPseudoXTsmVUnaryMath;
+defm PseudoXTsm_VLOG2 : VPseudoXTsmVUnaryMath;
+defm PseudoXTsm_VPOW2 : VPseudoXTsmVUnaryMath;
+
+defvar XTsmBF16FloatVectors =
+  !filter(vti, AllFloatVectors, !eq(vti.Scalar, bf16));
+defvar XTsmNonBF16FloatVectors =
+  !filter(vti, AllFloatVectors, !not(!eq(vti.Scalar, bf16)));
+
+defm : VPatUnaryV_V_RM<"int_riscv_vcos", "PseudoXTsm_VCOS",
+                       XTsmNonBF16FloatVectors, isSEWAware = 1>;
+defm : VPatUnaryV_V_RM<"int_riscv_vsin", "PseudoXTsm_VSIN",
+                       XTsmNonBF16FloatVectors, isSEWAware = 1>;
+defm : VPatUnaryV_V_RM<"int_riscv_vlog2", "PseudoXTsm_VLOG2",
+                       XTsmNonBF16FloatVectors, isSEWAware = 1>;
+defm : VPatUnaryV_V_RM<"int_riscv_vpow2", "PseudoXTsm_VPOW2",
+                       XTsmNonBF16FloatVectors, isSEWAware = 1>;
+defm : VPatUnaryV_V_RM<"int_riscv_vcos", "PseudoXTsm_VCOS_BFloat16",
+                       XTsmBF16FloatVectors, isSEWAware = 1>;
+defm : VPatUnaryV_V_RM<"int_riscv_vsin", "PseudoXTsm_VSIN_BFloat16",
+                       XTsmBF16FloatVectors, isSEWAware = 1>;
+defm : VPatUnaryV_V_RM<"int_riscv_vlog2", "PseudoXTsm_VLOG2_BFloat16",
+                       XTsmBF16FloatVectors, isSEWAware = 1>;
+defm : VPatUnaryV_V_RM<"int_riscv_vpow2", "PseudoXTsm_VPOW2_BFloat16",
+                       XTsmBF16FloatVectors, isSEWAware = 1>;
+
+//===----------------------------------------------------------------------===//
+// XTsm82s (RAISA) : `vor.vs` pseudo
+//
+// Vendor names (`strings -a libLLVMRISCVDesc.a | grep '^PseudoVOR_VS_'`):
+// PseudoVOR_VS_{MF8,MF4,MF2,M1,M2,M4,M8}{,_MASK} -- i.e. the LMUL in the name
+// is the *result* LMUL and all three register operands are the result's class.
+// Vendor MIR for the f32 reduction (`PseudoVOR_VS_M1`):
+//   %10:vr = PseudoVOR_VS_M1 $noreg(tied-def 0), killed %1:vr, killed %9:vr,
+//            128, 5, 0
+// and for the f16 one (`PseudoVOR_VS_MF2`, result MF2 but an M1 second source):
+//   %9:vr = PseudoVOR_VS_MF2 $noreg(tied-def 0), killed %1:vr, killed %8:vr,
+//           128, 4, 0
+// i.e. operand order (passthru, vector, vector-scalar, vl, sew, policy), which
+// is exactly upstream's `VPseudoBinaryNoMaskPolicy`.  No bf16 format bit: the
+// vendor's vsetvli preceding `vor.vs` has none.
+//===----------------------------------------------------------------------===//
+
+multiclass VPseudoXTsmBinaryVS {
+  foreach m = MxList in {
+    defvar mx = m.MX;
+    let VLMul = m.value in {
+      def "_VS_" # mx
+          : VPseudoBinaryNoMaskPolicy<m.vrclass, m.vrclass, m.vrclass, "", 1>,
+            SchedBinary<"WriteVIALUV", "ReadVIALUV", "ReadVIALUV", mx,
+                        forcePassthruRead = true>;
+      def "_VS_" # mx # "_MASK"
+          : VPseudoBinaryMaskPolicy<m.vrclass, m.vrclass, m.vrclass, "", 1>,
+            RISCVMaskedPseudo<MaskIdx = 3>,
+            SchedBinary<"WriteVIALUV", "ReadVIALUV", "ReadVIALUV", mx,
+                        forcePassthruRead = true>;
+    }
+  }
+}
+defm PseudoXTsm_VOR : VPseudoXTsmBinaryVS;
+
+// The second source of `vor.vs` is not required to have the result's type: the
+// f16/bf16 reductions pass an M1 vector for an MF2 result (the fork models the
+// scalar as the whole low register).  The two shapes the corpus produces are
+// therefore wired explicitly rather than by a uniform VTypeInfo walk.
+defm : VPatBinary<"int_riscv_vor_vs", "PseudoXTsm_VOR_VS_M1", VI32M1.Vector,
+                  VI32M1.Vector, VI32M1.Vector, VI32M1.Mask, VI32M1.Log2SEW,
+                  VI32M1.RegClass, VI32M1.RegClass, VI32M1.RegClass>;
+defm : VPatBinary<"int_riscv_vor_vs", "PseudoXTsm_VOR_VS_MF2", VI16MF2.Vector,
+                  VI16MF2.Vector, VI16M1.Vector, VI16MF2.Mask,
+                  VI16MF2.Log2SEW, VI16MF2.RegClass, VI16MF2.RegClass,
+                  VI16M1.RegClass>;

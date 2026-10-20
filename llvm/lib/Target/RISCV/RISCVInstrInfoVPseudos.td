@@ -135,6 +135,12 @@ defvar TA_MA = 3;
 
 class PseudoToVInst<string PseudoInst> {
   defvar AffixSubsts = [["Pseudo", ""],
+                        // The fork (and newer upstream) name the bf16 twin of a
+                        // pseudo by inserting `BFloat16_` after the opcode
+                        // (e.g. PseudoVCOS_BFloat16_V_M1_E16); it must be
+                        // stripped for the pseudo->real lookup, exactly as the
+                        // vendor does.
+                        ["_BFloat16", ""],
                         ["_E64", ""],
                         ["_E32", ""],
                         ["_E16", ""],

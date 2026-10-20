@@ -139,6 +139,14 @@ enum {
   // 3 -> SEW * 4
   DestEEWShift = ElementsDependOnMaskShift + 1,
   DestEEWMask = 3ULL << DestEEWShift,
+
+  // TSM fork: this pseudo demands that bit 8 of VTYPE (the bf16 format bit,
+  // `RISCVVType::isBF16Fmt`) has a particular value.  The vendor drives this
+  // from a per-opcode table (`RISCV::getCTPseudoInfoByBF16`); expressing it as
+  // a TSFlags property of the pseudo keeps the requirement declared next to the
+  // pseudo instead of hard-coded in the consumer.
+  AltFmtTypeShift = DestEEWShift + 2,
+  AltFmtTypeMask = 1ULL << AltFmtTypeShift,
 };
 
 // Helper functions to read TSFlags.
@@ -150,6 +158,11 @@ static inline unsigned getFormat(uint64_t TSFlags) {
 static inline RISCVVType::VLMUL getLMul(uint64_t TSFlags) {
   return static_cast<RISCVVType::VLMUL>((TSFlags & VLMulMask) >> VLMulShift);
 }
+/// \returns true if this pseudo demands the bf16 vtype format bit.
+static inline bool hasAltFmtType(uint64_t TSFlags) {
+  return (TSFlags & AltFmtTypeMask) >> AltFmtTypeShift;
+}
+
 /// \returns true if this a _TIED pseudo.
 static inline bool isTiedPseudo(uint64_t TSFlags) {
   return TSFlags & IsTiedPseudoMask;

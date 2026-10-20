@@ -258,6 +258,11 @@ class RVInstCommon<dag outs, dag ins, string opcodestr, string argstr,
   // Indicates the EEW of a vector instruction's destination operand.
   EEW DestEEW = EEWSEWx1;
   let TSFlags{25-24} = DestEEW.Value;
+
+  // TSM fork: this pseudo demands the bf16 vtype format bit (bit 8 of VTYPE).
+  // See RISCVII::AltFmtTypeShift.
+  bit AltFmtType = 0;
+  let TSFlags{26} = AltFmtType;
 }
 
 class RVInst<dag outs, dag ins, string opcodestr, string argstr,

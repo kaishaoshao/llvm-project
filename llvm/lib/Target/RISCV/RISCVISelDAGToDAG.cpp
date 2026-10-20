@@ -994,6 +994,74 @@ static unsigned getSegInstNF(unsigned Intrinsic) {
   }
 }
 
+
+// Pseudo lookup for the fork's `llvm.riscv.{vluxei,vsuxei}.sync` intrinsics.
+//
+// The vendor ships a separate `_SYNC_` pseudo family for these; the complete
+// set was recovered from its descriptor library with
+//   strings -a llvm-toolchain/lib/libLLVMRISCVDesc.a | grep -E '^PseudoV(LUXEI|SUXEI)[0-9]+_SYNC_V'
+// (72 names = 18 combinations x {load,store} x {plain,mask}, name =
+// <IndexLMUL>_<DataLMUL>).  That set is exactly the upstream `VPseudoILoad`
+// EMUL rule `idxEMUL = idxEEW * dataEMUL / dataEEW` restricted to index
+// EEW 32/64 and data EEW 16/32 (see RISCVInstrInfoXTsm82s.td).
+//
+// `RISCV::getVLXPseudo` cannot be reused: its generated table is keyed on
+// (Masked, Ordered, Log2SEW, LMUL, IndexLMUL), with no room for the sync flag,
+// so the sync pseudos would collide with the non-sync ones.  Keep the mapping
+// explicit; it is 1:1 with the vendor name list above.
+namespace {
+struct XTsmSyncVXPseudo {
+  uint8_t Log2SEW;    // index EEW, log2 (5 for e32, 6 for e64)
+  uint8_t LMUL;       // data LMUL (RISCVVType::VLMUL)
+  uint8_t IndexLMUL;  // index LMUL (RISCVVType::VLMUL)
+  unsigned Load, LoadMask, Store, StoreMask;
+};
+
+const XTsmSyncVXPseudo XTsmSyncVXPseudos[] = {
+#define ROW(E, D, I, N)                                                        \
+  {(E) == 64 ? 6 : 5, RISCVVType::LMUL_##D, RISCVVType::LMUL_##I,              \
+   RISCV::PseudoXTsm_VLUXEI##E##_SYNC_V_##N,                                   \
+   RISCV::PseudoXTsm_VLUXEI##E##_SYNC_V_##N##_MASK,                            \
+   RISCV::PseudoXTsm_VSUXEI##E##_SYNC_V_##N,                                   \
+   RISCV::PseudoXTsm_VSUXEI##E##_SYNC_V_##N##_MASK}
+  // Index EEW 64 (Log2SEW 6).
+  ROW(64, F2, 1, M1_MF2),
+  ROW(64, F4, 1, M1_MF4),
+  ROW(64, 1, 2, M2_M1),
+  ROW(64, F2, 2, M2_MF2),
+  ROW(64, 1, 4, M4_M1),
+  ROW(64, 2, 4, M4_M2),
+  ROW(64, 2, 8, M8_M2),
+  ROW(64, 4, 8, M8_M4),
+  // Index EEW 32 (Log2SEW 5).
+  ROW(32, 1, 1, M1_M1),
+  ROW(32, F2, 1, M1_MF2),
+  ROW(32, 1, 2, M2_M1),
+  ROW(32, 2, 2, M2_M2),
+  ROW(32, 2, 4, M4_M2),
+  ROW(32, 4, 4, M4_M4),
+  ROW(32, 4, 8, M8_M4),
+  ROW(32, 8, 8, M8_M8),
+  ROW(32, F2, F2, MF2_MF2),
+  ROW(32, F4, F2, MF2_MF4),
+#undef ROW
+};
+
+unsigned getXTsmSyncIndexedPseudo(bool IsStore, bool IsMasked,
+                                  unsigned IndexLog2EEW, unsigned LMUL,
+                                  unsigned IndexLMUL) {
+  for (const XTsmSyncVXPseudo &P : XTsmSyncVXPseudos) {
+    if (P.Log2SEW != IndexLog2EEW || P.LMUL != LMUL ||
+        P.IndexLMUL != IndexLMUL)
+      continue;
+    if (IsStore)
+      return IsMasked ? P.StoreMask : P.Store;
+    return IsMasked ? P.LoadMask : P.Load;
+  }
+  return 0;
+}
+} // namespace
+
 void RISCVDAGToDAGISel::Select(SDNode *Node) {
   // If we have a custom node, we have already selected.
   if (Node->isMachineOpcode()) {
@@ -2237,6 +2305,45 @@ void RISCVDAGToDAGISel::Select(SDNode *Node) {
       ReplaceNode(Node, Load);
       return;
     }
+    // Fork: llvm.riscv.vluxei.sync.<data>.p0.<index>.i64 -- indexed load with
+    // an explicit pointer operand and its own `_SYNC_` pseudo family.
+    case Intrinsic::riscv_vluxei_sync:
+    case Intrinsic::riscv_vluxei_sync_mask: {
+      bool IsMasked = IntNo == Intrinsic::riscv_vluxei_sync_mask;
+
+      MVT VT = Node->getSimpleValueType(0);
+      unsigned Log2SEW = Log2_32(VT.getScalarSizeInBits());
+
+      unsigned CurOp = 2;
+      SmallVector<SDValue, 8> Operands;
+      Operands.push_back(Node->getOperand(CurOp++));
+
+      MVT IndexVT;
+      addVectorLoadStoreOperands(Node, Log2SEW, DL, CurOp, IsMasked,
+                                 /*IsStridedOrIndexed*/ true, Operands,
+                                 /*IsLoad=*/true, &IndexVT);
+      // See the vsuxei.sync case: index before base.
+      SDValue TmpIdx = Operands[1];
+      Operands[1] = Operands[2];
+      Operands[2] = TmpIdx;
+
+      assert(VT.getVectorElementCount() == IndexVT.getVectorElementCount() &&
+             "Element count mismatch");
+
+      unsigned Pseudo = getXTsmSyncIndexedPseudo(
+          /*IsStore=*/false, IsMasked, Log2_32(IndexVT.getScalarSizeInBits()),
+          static_cast<unsigned>(RISCVTargetLowering::getLMUL(VT)),
+          static_cast<unsigned>(RISCVTargetLowering::getLMUL(IndexVT)));
+      if (!Pseudo)
+        report_fatal_error("Unsupported vector type for llvm.riscv.vluxei.sync");
+      MachineSDNode *Load =
+          CurDAG->getMachineNode(Pseudo, DL, Node->getVTList(), Operands);
+
+      CurDAG->setNodeMemRefs(Load, {cast<MemSDNode>(Node)->getMemOperand()});
+
+      ReplaceNode(Node, Load);
+      return;
+    }
     case Intrinsic::riscv_vlm:
     case Intrinsic::riscv_vle:
     case Intrinsic::riscv_vle_mask:
@@ -2465,6 +2572,46 @@ void RISCVDAGToDAGISel::Select(SDNode *Node) {
           static_cast<unsigned>(LMUL), static_cast<unsigned>(IndexLMUL));
       MachineSDNode *Store =
           CurDAG->getMachineNode(P->Pseudo, DL, Node->getVTList(), Operands);
+
+      CurDAG->setNodeMemRefs(Store, {cast<MemSDNode>(Node)->getMemOperand()});
+
+      ReplaceNode(Node, Store);
+      return;
+    }
+    // Fork: llvm.riscv.vsuxei.sync.<data>.p0.<index>.i64 -- indexed store.
+    case Intrinsic::riscv_vsuxei_sync:
+    case Intrinsic::riscv_vsuxei_sync_mask: {
+      bool IsMasked = IntNo == Intrinsic::riscv_vsuxei_sync_mask;
+
+      MVT VT = Node->getOperand(2)->getSimpleValueType(0);
+      unsigned Log2SEW = Log2_32(VT.getScalarSizeInBits());
+
+      unsigned CurOp = 2;
+      SmallVector<SDValue, 8> Operands;
+      Operands.push_back(Node->getOperand(CurOp++)); // Store value.
+
+      MVT IndexVT;
+      addVectorLoadStoreOperands(Node, Log2SEW, DL, CurOp, IsMasked,
+                                 /*IsStridedOrIndexed*/ true, Operands,
+                                 /*IsLoad=*/false, &IndexVT);
+      // addVectorLoadStoreOperands emits (base, index); our XTsm_*_SYNC_V
+      // records declare the index (vs2) before the base (rs1) and
+      // lowerRISCVVMachineInstrToMCInst copies the operands positionally.
+      SDValue TmpIdx = Operands[1];
+      Operands[1] = Operands[2];
+      Operands[2] = TmpIdx;
+
+      assert(VT.getVectorElementCount() == IndexVT.getVectorElementCount() &&
+             "Element count mismatch");
+
+      unsigned Pseudo = getXTsmSyncIndexedPseudo(
+          /*IsStore=*/true, IsMasked, Log2_32(IndexVT.getScalarSizeInBits()),
+          static_cast<unsigned>(RISCVTargetLowering::getLMUL(VT)),
+          static_cast<unsigned>(RISCVTargetLowering::getLMUL(IndexVT)));
+      if (!Pseudo)
+        report_fatal_error("Unsupported vector type for llvm.riscv.vsuxei.sync");
+      MachineSDNode *Store =
+          CurDAG->getMachineNode(Pseudo, DL, Node->getVTList(), Operands);
 
       CurDAG->setNodeMemRefs(Store, {cast<MemSDNode>(Node)->getMemOperand()});
 
