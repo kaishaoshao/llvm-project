@@ -22222,6 +22222,11 @@ SDValue RISCVTargetLowering::LowerFormalArguments(
   default:
     report_fatal_error("Unsupported calling convention");
   case CallingConv::C:
+#ifdef __TSM_RISCV__
+  // RAISA device kernels (`__attribute__((global))`, CallingConv::RPU_KERNEL)
+  // take their single packed parameter-block pointer exactly like C.
+  case CallingConv::RPU_KERNEL:
+#endif
   case CallingConv::Fast:
   case CallingConv::SPIR_KERNEL:
   case CallingConv::GRAAL:

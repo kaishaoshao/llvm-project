@@ -313,9 +313,14 @@ void BackendConsumer::HandleTranslationUnit(ASTContext &C) {
 
   EmbedBitcode(getModule(), CodeGenOpts, llvm::MemoryBufferRef());
 
-  emitBackendOutput(CI, CI.getCodeGenOpts(),
-                    C.getTargetInfo().getDataLayoutString(), getModule(),
-                    Action, FS, std::move(AsmOutStream), this);
+  // RAISA: same reasoning as in CodeGenAction::ExecuteAction below -- compare the
+  // TargetMachine against the layout the module carries, which for a RAISA device
+  // compile is the AST device target's RPU layout and not CI.getTarget()'s.
+  // NB: Module::getDataLayoutStr() returns a reference to a temporary in this
+  // tree, so keep an owning copy alive across the call.
+  std::string DLDesc = getModule()->getDataLayout().getStringRepresentation();
+  emitBackendOutput(CI, CI.getCodeGenOpts(), DLDesc, getModule(), Action, FS,
+                    std::move(AsmOutStream), this);
 
   Ctx.setDiagnosticHandler(std::move(OldDiagnosticHandler));
 
@@ -1184,8 +1189,17 @@ void CodeGenAction::ExecuteAction() {
   std::unique_ptr<llvm::ToolOutputFile> OptRecordFile =
       std::move(*OptRecordFileOrErr);
 
-  emitBackendOutput(CI, CI.getCodeGenOpts(),
-                    CI.getTarget().getDataLayoutString(), TheModule.get(), BA,
+  // RAISA: the module's layout comes from the AST's device target
+  // (ModuleBuilder: Ctx->getTargetInfo()), which for a `-x raisa` device compile
+  // is not `CI.getTarget()` -- `CI.getTarget()` still carries the upstream RV64
+  // layout, so passing its DataLayoutString here made BackendUtil's consistency
+  // check reject every RAISA object ("backend data layout 'e-m:...-A5' does not
+  // match expected target description 'e-m:e-p:64:64-i64:64-i128:128-n32:64-S128'").
+  // Compare the TargetMachine against the layout the module actually carries;
+  // this is byte-for-byte a no-op on every non-RAISA target, where the two
+  // strings are already equal.
+  std::string DLDesc = TheModule->getDataLayout().getStringRepresentation();
+  emitBackendOutput(CI, CI.getCodeGenOpts(), DLDesc, TheModule.get(), BA,
                     CI.getFileManager().getVirtualFileSystemPtr(),
                     std::move(OS));
   if (OptRecordFile)
