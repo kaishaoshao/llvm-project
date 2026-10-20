@@ -2315,6 +2315,16 @@ void ASTStmtWriter::VisitOpaqueValueExpr(OpaqueValueExpr *E) {
 }
 
 //===----------------------------------------------------------------------===//
+// RAISA Expressions and Statements.
+//===----------------------------------------------------------------------===//
+
+void ASTStmtWriter::VisitRAISAKernelCallExpr(RAISAKernelCallExpr *E) {
+  VisitCallExpr(E);
+  Record.AddStmt(E->getConfig());
+  Code = serialization::EXPR_RAISA_KERNEL_CALL;
+}
+
+//===----------------------------------------------------------------------===//
 // CUDA Expressions and Statements.
 //===----------------------------------------------------------------------===//
 

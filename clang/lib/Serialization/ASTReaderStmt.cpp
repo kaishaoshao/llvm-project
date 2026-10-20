@@ -2378,6 +2378,15 @@ void ASTStmtReader::VisitSEHTryStmt(SEHTryStmt *S) {
 }
 
 //===----------------------------------------------------------------------===//
+// RAISA Expressions and Statements
+//===----------------------------------------------------------------------===//
+
+void ASTStmtReader::VisitRAISAKernelCallExpr(RAISAKernelCallExpr *E) {
+  VisitCallExpr(E);
+  E->setPreArg(RAISAKernelCallExpr::CONFIG, Record.readSubExpr());
+}
+
+//===----------------------------------------------------------------------===//
 // CUDA Expressions and Statements
 //===----------------------------------------------------------------------===//
 
@@ -4366,6 +4375,16 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       auto HasFPFeatures = CallExprBits.getNextBit();
       S = CUDAKernelCallExpr::CreateEmpty(Context, NumArgs, HasFPFeatures,
                                           Empty);
+      break;
+    }
+
+    case EXPR_RAISA_KERNEL_CALL: {
+      auto NumArgs = Record[ASTStmtReader::NumExprFields];
+      BitsUnpacker CallExprBits(Record[ASTStmtReader::NumExprFields + 1]);
+      CallExprBits.advance(1);
+      auto HasFPFeatures = CallExprBits.getNextBit();
+      S = RAISAKernelCallExpr::CreateEmpty(Context, NumArgs, HasFPFeatures,
+                                           Empty);
       break;
     }
 

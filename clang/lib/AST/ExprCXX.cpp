@@ -1925,6 +1925,50 @@ TypeTraitExpr *TypeTraitExpr::CreateDeserialized(const ASTContext &C,
   return new (Mem) TypeTraitExpr(EmptyShell(), IsStoredAsBool);
 }
 
+RAISAKernelCallExpr::RAISAKernelCallExpr(Expr *Fn, CallExpr *Config,
+                                         ArrayRef<Expr *> Args, QualType Ty,
+                                         ExprValueKind VK, SourceLocation RP,
+                                         FPOptionsOverride FPFeatures,
+                                         unsigned MinNumArgs)
+    : CallExpr(RAISAKernelCallExprClass, Fn, /*PreArgs=*/Config, Args, Ty, VK,
+               RP, FPFeatures, MinNumArgs, NotADL) {}
+
+RAISAKernelCallExpr::RAISAKernelCallExpr(unsigned NumArgs, bool HasFPFeatures,
+                                         EmptyShell Empty)
+    : CallExpr(RAISAKernelCallExprClass, /*NumPreArgs=*/END_PREARG, NumArgs,
+               HasFPFeatures, Empty) {}
+
+RAISAKernelCallExpr *
+RAISAKernelCallExpr::Create(const ASTContext &Ctx, Expr *Fn, CallExpr *Config,
+                            ArrayRef<Expr *> Args, QualType Ty, ExprValueKind VK,
+                            SourceLocation RP, FPOptionsOverride FPFeatures,
+                            unsigned MinNumArgs) {
+  // Allocate storage for the trailing objects of CallExpr.
+  unsigned NumArgs = std::max<unsigned>(Args.size(), MinNumArgs);
+  unsigned SizeOfTrailingObjects = CallExpr::sizeOfTrailingObjects(
+      /*NumPreArgs=*/END_PREARG, NumArgs, FPFeatures.requiresTrailingStorage());
+  void *Mem =
+      Ctx.Allocate(sizeToAllocateForCallExprSubclass<RAISAKernelCallExpr>(
+                       SizeOfTrailingObjects),
+                   alignof(RAISAKernelCallExpr));
+  return new (Mem)
+      RAISAKernelCallExpr(Fn, Config, Args, Ty, VK, RP, FPFeatures, MinNumArgs);
+}
+
+RAISAKernelCallExpr *RAISAKernelCallExpr::CreateEmpty(const ASTContext &Ctx,
+                                                      unsigned NumArgs,
+                                                      bool HasFPFeatures,
+                                                      EmptyShell Empty) {
+  // Allocate storage for the trailing objects of CallExpr.
+  unsigned SizeOfTrailingObjects = CallExpr::sizeOfTrailingObjects(
+      /*NumPreArgs=*/END_PREARG, NumArgs, HasFPFeatures);
+  void *Mem =
+      Ctx.Allocate(sizeToAllocateForCallExprSubclass<RAISAKernelCallExpr>(
+                       SizeOfTrailingObjects),
+                   alignof(RAISAKernelCallExpr));
+  return new (Mem) RAISAKernelCallExpr(NumArgs, HasFPFeatures, Empty);
+}
+
 CUDAKernelCallExpr::CUDAKernelCallExpr(Expr *Fn, CallExpr *Config,
                                        ArrayRef<Expr *> Args, QualType Ty,
                                        ExprValueKind VK, SourceLocation RP,

@@ -2097,6 +2097,15 @@ void StmtPrinter::VisitCXXMemberCallExpr(CXXMemberCallExpr *Node) {
   VisitCallExpr(cast<CallExpr>(Node));
 }
 
+void StmtPrinter::VisitRAISAKernelCallExpr(RAISAKernelCallExpr *Node) {
+  PrintExpr(Node->getCallee());
+  OS << "<<<";
+  PrintCallArgs(Node->getConfig());
+  OS << ">>>(";
+  PrintCallArgs(Node);
+  OS << ")";
+}
+
 void StmtPrinter::VisitCUDAKernelCallExpr(CUDAKernelCallExpr *Node) {
   PrintExpr(Node->getCallee());
   OS << "<<<";

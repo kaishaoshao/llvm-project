@@ -1980,6 +1980,10 @@ void StmtProfiler::VisitCXXMemberCallExpr(const CXXMemberCallExpr *S) {
   VisitCallExpr(S);
 }
 
+void StmtProfiler::VisitRAISAKernelCallExpr(const RAISAKernelCallExpr *S) {
+  VisitCallExpr(S);
+}
+
 void StmtProfiler::VisitCUDAKernelCallExpr(const CUDAKernelCallExpr *S) {
   VisitCallExpr(S);
 }

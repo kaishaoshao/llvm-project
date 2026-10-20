@@ -14144,6 +14144,39 @@ ExprResult TreeTransform<Derived>::TransformEmbedExpr(EmbedExpr *E) {
 
 template<typename Derived>
 ExprResult
+TreeTransform<Derived>::TransformRAISAKernelCallExpr(RAISAKernelCallExpr *E) {
+  // Transform the callee.
+  ExprResult Callee = getDerived().TransformExpr(E->getCallee());
+  if (Callee.isInvalid())
+    return ExprError();
+
+  // Transform exec config.
+  ExprResult EC = getDerived().TransformCallExpr(E->getConfig());
+  if (EC.isInvalid())
+    return ExprError();
+
+  // Transform arguments.
+  bool ArgChanged = false;
+  SmallVector<Expr*, 8> Args;
+  if (getDerived().TransformExprs(E->getArgs(), E->getNumArgs(), true, Args,
+                                  &ArgChanged))
+    return ExprError();
+
+  if (!getDerived().AlwaysRebuild() &&
+      Callee.get() == E->getCallee() &&
+      !ArgChanged)
+    return SemaRef.MaybeBindToTemporary(E);
+
+  // FIXME: Wrong source location information for the '('.
+  SourceLocation FakeLParenLoc
+    = ((Expr *)Callee.get())->getSourceRange().getBegin();
+  return getDerived().RebuildCallExpr(Callee.get(), FakeLParenLoc,
+                                      Args,
+                                      E->getRParenLoc(), EC.get());
+}
+
+template<typename Derived>
+ExprResult
 TreeTransform<Derived>::TransformCUDAKernelCallExpr(CUDAKernelCallExpr *E) {
   // Transform the callee.
   ExprResult Callee = getDerived().TransformExpr(E->getCallee());
