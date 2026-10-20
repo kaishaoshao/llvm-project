@@ -131,6 +131,18 @@ bool TX8InsertXFRM::addMemAllocMarkers(MachineFunction &MF) const {
 
   for (MachineBasicBlock &MBB : MF) {
     for (MachineInstr &MI : MBB) {
+      // `set_mem_alloc` *defines* the marker register; the vendor's MIR shows
+      //   SET_MEM_ALLOC %4:gpr, implicit-def $mem_alloc
+      // while the vector memory ops below use it.  The definition is what puts
+      // `set_mem_alloc` and its address computation on the dependency path of
+      // the vector ops, which the pre- and post-RA schedulers need in order to
+      // reproduce the vendor's instruction order.
+      if (MI.getOpcode() == RISCV::XTsm_SET_MEM_ALLOC &&
+          !MI.definesRegister(RISCV::MEM_ALLOC, /*TRI=*/nullptr)) {
+        MI.addOperand(MF, MachineOperand::CreateReg(
+                              RISCV::MEM_ALLOC, /*isDef=*/true, /*isImp=*/true));
+        Changed = true;
+      }
       if (!isVectorMemOp(MI, MRI))
         continue;
       if (MI.readsRegister(RISCV::MEM_ALLOC, /*TRI=*/nullptr))
