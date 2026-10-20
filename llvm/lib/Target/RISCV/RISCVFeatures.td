@@ -1642,6 +1642,26 @@ def HasVendorXAndesVDot
       AssemblerPredicate<(all_of FeatureVendorXAndesVDot),
                          "'XAndesVDot' (Andes Vector Dot Product Extension)">;
 
+// TSM X82 extension: the RAISA / TX8 tensor-extended RISC-V ISA used by the
+// tsm-x82 CPU. Recovered from the vendor toolchain's generated
+// RISCVTargetParserDef.inc, which lists `{"xtsm82s", {1, 0}}` in the
+// non-experimental extension table and the description
+// "'XTsm82S' (TSM X82 extension)".
+//
+// RISCVExtension derives Desc from the record name, which would render this
+// as 'XTsm82s'; the vendor spells the trailing letter in upper case and the
+// string is user-visible through --print-supported-extensions, so it is
+// overridden here rather than worked around by renaming the record (which
+// would also rename the HasVendorXTsm82s predicate and the accessor).
+def FeatureVendorXTsm82s
+    : RISCVExtension<1, 0, "TSM X82 extension"> {
+  let Desc = "'XTsm82S' (TSM X82 extension)";
+}
+def HasVendorXTsm82s
+    : Predicate<"Subtarget->hasVendorXTsm82s()">,
+      AssemblerPredicate<(all_of FeatureVendorXTsm82s),
+                         "'XTsm82S' (TSM X82 extension)">;
+
 //===----------------------------------------------------------------------===//
 // LLVM specific features and extensions
 //===----------------------------------------------------------------------===//

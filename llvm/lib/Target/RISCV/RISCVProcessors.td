@@ -567,6 +567,33 @@ def TENSTORRENT_ASCALON_D8 : RISCVProcessorModel<"tt-ascalon-d8",
                                                   TuneOptimizedZeroStrideLoad,
                                                   TunePostRAScheduler]>;
 
+// tsm-x82: the TSingMicro TX8 NPU host CPU. The feature list below is written
+// out explicitly (rather than relying on `implies`) because the generated
+// `RISCVTargetParserDef.inc` march string only contains the *directly listed*
+// extensions; the vendor file expects exactly
+//   rv64i2p1_m2p0_f2p2_c2p0_zicsr2p0_zifencei2p0_zfbfmin1p0_zfh1p0_zbb1p0_
+//   zve64x1p0_zvfbfmin1p0_zvfh1p0_xtsm82s1p0
+// Note there is no 'a', no 'd' and no 'v' — this is a single-float (lp64f)
+// target whose vector support is the Zve64x embedded subset plus the
+// XTsm82s tensor extension. `printMArch` does not expand `implies`, so
+// zicsr/zifencei must be listed even though Zicsr/Zifencei are implied by I.
+def TSM_X82 : RISCVProcessorModel<"tsm-x82",
+                                  NoSchedModel,
+                                  [Feature64Bit,
+                                   FeatureStdExtI,
+                                   FeatureStdExtM,
+                                   FeatureStdExtF,
+                                   FeatureStdExtC,
+                                   FeatureStdExtZicsr,
+                                   FeatureStdExtZifencei,
+                                   FeatureStdExtZfbfmin,
+                                   FeatureStdExtZfh,
+                                   FeatureStdExtZbb,
+                                   FeatureStdExtZve64x,
+                                   FeatureStdExtZvfbfmin,
+                                   FeatureStdExtZvfh,
+                                   FeatureVendorXTsm82s]>;
+
 def VENTANA_VEYRON_V1 : RISCVProcessorModel<"veyron-v1",
                                             NoSchedModel,
                                             [Feature64Bit,
