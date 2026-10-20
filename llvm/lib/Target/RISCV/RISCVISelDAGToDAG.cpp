@@ -2159,6 +2159,29 @@ void RISCVDAGToDAGISel::Select(SDNode *Node) {
       // By default we do not custom select any intrinsic.
     default:
       break;
+    // Fork: llvm.riscv.kcore_ncc_read.  The vendor drops the argument's value
+    // but still consumes it: it copies the argument into `$x0` and reads `$x0`
+    // in the `rs2` slot.  `finalize-isel` MIR (vendor):
+    //   %0:gpr = COPY $x10        ; the argument
+    //   $x0    = COPY %0:gpr      ; the vendor's copy, dead in value terms
+    //   %1:gpr = Kcore_Ncc_Read $x0
+    //   $x10   = COPY %1:gpr
+    // and the asm is `kcore_ncc_read a1, zero` / `mv zero, a0` / `mv a0, a1`.
+    // TableGen cannot express this (the named input would be dead:
+    // "Pattern has dead named input"), hence the C++ shape.  The copy is kept
+    // alive by routing the intrinsic's chain through it, which is also what
+    // orders it before the read.
+    case Intrinsic::riscv_kcore_ncc_read: {
+      SDValue Arg = Node->getOperand(2);
+      SDValue Copy =
+          CurDAG->getCopyToReg(Node->getOperand(0), DL, RISCV::X0, Arg);
+      SDValue Ops[] = {CurDAG->getRegister(RISCV::X0, MVT::i64)};
+      MachineSDNode *Read = CurDAG->getMachineNode(
+          RISCV::XTsm_KCORE_NCC_READ, DL, Node->getVTList(), Ops);
+      ReplaceNode(Node, Read);
+      ReplaceUses(SDValue(Read, 1), Copy);
+      return;
+    }
     case Intrinsic::riscv_vlseg2:
     case Intrinsic::riscv_vlseg3:
     case Intrinsic::riscv_vlseg4:
